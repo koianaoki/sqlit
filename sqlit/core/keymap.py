@@ -309,6 +309,8 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("v", "exit_tree_visual_mode", "tree_visual", primary=False),
             ActionKeyDef("escape", "clear_connection_selection", "tree"),
             ActionKeyDef("s", "select_table", "tree"),
+            ActionKeyDef("c", "show_table_columns", "tree"),
+            ActionKeyDef("i", "show_table_indexes", "tree"),
             ActionKeyDef("f", "refresh_tree", "tree"),
             ActionKeyDef("R", "refresh_tree", "tree", primary=False),
             ActionKeyDef("e", "edit_connection", "tree"),

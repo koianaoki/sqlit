@@ -255,7 +255,7 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         loader = getattr(self, "_load_schema_cache", None)
         if callable(loader):
             request_token = object()
-            setattr(self, "_schema_load_request_token", request_token)
+            self._schema_load_request_token = request_token
 
             def run_loader() -> None:
                 if getattr(self, "_schema_load_request_token", None) is not request_token:
@@ -356,6 +356,85 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         if self._get_node_kind(node) == "sequence":
             tree_object_info.show_sequence_info(self, data)
             return
+
+    def _selected_table_node_data(self: TreeMixinHost) -> Any | None:
+        """Return cursor data when a table/view node is selected."""
+        node = self.object_tree.cursor_node
+        if not node or not node.data or self._get_node_kind(node) not in ("table", "view"):
+            return None
+        return node.data
+
+    def action_show_table_columns(self: TreeMixinHost) -> None:
+        """Show the selected table/view columns in the results panel."""
+        data = self._selected_table_node_data()
+        if data is None:
+            return
+
+        schema_service = self._get_schema_service()
+        if not schema_service:
+            return
+
+        try:
+            columns = schema_service.list_columns(data.database, data.schema, data.name)
+        except Exception as error:
+            self.notify(f"Error getting table columns: {error}", severity="error")
+            return
+
+        rows = [
+            (index + 1, column.name, column.data_type, "Yes" if column.is_primary_key else "")
+            for index, column in enumerate(columns)
+        ]
+        result_columns = ["#", "Column", "Type", "Primary Key"]
+        self._replace_results_table(result_columns, rows)
+        self._last_result_columns = result_columns
+        self._last_result_rows = rows
+        self._last_result_row_count = len(rows)
+        self.query_input.text = f"-- SHOW COLUMNS FROM {data.name}"
+        self.notify(f"Columns: {data.name} ({len(rows)})")
+
+    def action_show_table_indexes(self: TreeMixinHost) -> None:
+        """Show the selected table indexes in the results panel."""
+        data = self._selected_table_node_data()
+        if data is None:
+            return
+
+        if not self.current_provider or not self.current_provider.capabilities.supports_indexes:
+            self.notify("Indexes not supported for this database.", severity="warning")
+            return
+
+        schema_service = self._get_schema_service()
+        if not schema_service:
+            return
+
+        try:
+            all_indexes = schema_service.list_folder_items("indexes", data.database)
+            matching_indexes = [item for item in all_indexes if len(item) >= 3 and item[2] == data.name]
+            rows = []
+            for _, index_name, table_name in matching_indexes:
+                columns = ""
+                definition = ""
+                is_unique = ""
+                try:
+                    info = schema_service.get_index_definition(data.database, index_name, table_name)
+                except Exception:
+                    info = None
+                if info:
+                    index_columns = info.get("columns") or []
+                    columns = ", ".join(str(column) for column in index_columns)
+                    is_unique = "Yes" if info.get("is_unique") else ""
+                    definition = str(info.get("definition") or "")
+                rows.append((index_name, columns, is_unique, definition))
+        except Exception as error:
+            self.notify(f"Error getting table indexes: {error}", severity="error")
+            return
+
+        result_columns = ["Index", "Columns", "Unique", "Definition"]
+        self._replace_results_table(result_columns, rows)
+        self._last_result_columns = result_columns
+        self._last_result_rows = rows
+        self._last_result_row_count = len(rows)
+        self.query_input.text = f"-- SHOW INDEXES FROM {data.name}"
+        self.notify(f"Indexes: {data.name} ({len(rows)})")
 
     def action_use_database(self: TreeMixinHost) -> None:
         """Toggle the selected database as the default for the current connection."""
@@ -546,7 +625,7 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         loader = getattr(self, "_load_schema_cache", None)
         if callable(loader):
             request_token = object()
-            setattr(self, "_schema_load_request_token", request_token)
+            self._schema_load_request_token = request_token
 
             def run_loader() -> None:
                 if getattr(self, "_schema_load_request_token", None) is not request_token:
