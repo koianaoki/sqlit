@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 from rich.markup import escape as escape_markup
 
+from sqlit.domains.explorer.ui.tree import expansion_state
+from sqlit.domains.explorer.ui.tree import loaders as tree_loaders
 from sqlit.shared.core.utils import fuzzy_match, highlight_matches
 from sqlit.shared.ui.protocols import TreeFilterMixinHost
 
@@ -24,6 +26,17 @@ class TreeFilterMixin:
     _tree_filter_matches: list[Any] = []
     _tree_filter_match_index: int = 0
     _tree_original_labels: dict[int, str] = {}
+    _tree_filter_applied: bool = False
+
+    _TREE_FILTER_LOADABLE_FOLDERS = {
+        "databases",
+        "tables",
+        "views",
+        "indexes",
+        "triggers",
+        "sequences",
+        "procedures",
+    }
 
     def action_tree_filter(self: TreeFilterMixinHost) -> None:
         """Open the tree filter."""
@@ -38,8 +51,10 @@ class TreeFilterMixin:
         self._tree_filter_matches = []
         self._tree_filter_match_index = 0
         self._tree_original_labels = {}
+        self._tree_filter_applied = False
 
         self.tree_filter_input.show()
+        self._ensure_tree_filter_search_nodes_loaded()
         self._update_tree_filter()
         self._update_footer_bindings()
 
@@ -53,6 +68,7 @@ class TreeFilterMixin:
         self.tree_filter_input.hide()
         self._restore_tree_labels()
         self._show_all_tree_nodes()
+        self._tree_filter_applied = False
         self._update_footer_bindings()
 
     def action_tree_filter_accept(self: TreeFilterMixinHost) -> None:
@@ -184,10 +200,15 @@ class TreeFilterMixin:
         self._tree_filter_query = raw_text[1:] if self._tree_filter_fuzzy else raw_text
 
         if not self._tree_filter_query:
-            self._show_all_tree_nodes()
+            if self._tree_filter_applied or self._tree_filter_matches or self._tree_original_labels:
+                self._show_all_tree_nodes()
             self._tree_filter_matches = []
+            self._tree_filter_applied = False
+            self._ensure_tree_filter_search_nodes_loaded()
             self.tree_filter_input.set_filter("", 0, total)
             return
+
+        self._ensure_tree_filter_search_nodes_loaded()
 
         # Find all matching nodes
         matches: list[Any] = []
@@ -198,6 +219,7 @@ class TreeFilterMixin:
 
         # Hide non-matching nodes and highlight matches
         self._apply_filter_to_tree()
+        self._tree_filter_applied = True
 
         # Update filter display
         self.tree_filter_input.set_filter(
@@ -246,7 +268,67 @@ class TreeFilterMixin:
                 # Preserve any existing markup prefix (like icons, colors)
                 node.set_label(self._rebuild_label_with_highlight(node, highlighted))
 
-        return node_matches or has_matching_child
+        return node_matches or has_matching_child or self._tree_filter_node_has_pending_load(node)
+
+    def _ensure_tree_filter_search_nodes_loaded(self: TreeFilterMixinHost) -> bool:
+        """Start loading unloaded explorer folders so filters can match their objects."""
+        if getattr(self, "current_connection", None) is None or getattr(self, "current_provider", None) is None:
+            return False
+
+        started = False
+        stack = [self.object_tree.root]
+        while stack:
+            node = stack.pop()
+            if self._tree_filter_should_load_node(node):
+                started = self._start_tree_filter_node_load(node) or started
+            stack.extend(reversed(getattr(node, "children", [])))
+        return started
+
+    def _tree_filter_should_load_node(self: TreeFilterMixinHost, node: Any) -> bool:
+        """Return True when a node may contain searchable children that are not loaded yet."""
+        data = getattr(node, "data", None)
+        if data is None:
+            return False
+        if self._get_node_kind(node) != "folder":
+            return False
+        folder_type = getattr(data, "folder_type", "")
+        if folder_type not in self._TREE_FILTER_LOADABLE_FOLDERS:
+            return False
+        children = list(getattr(node, "children", []))
+        return not children or (len(children) == 1 and self._get_node_kind(children[0]) == "loading")
+
+    def _start_tree_filter_node_load(self: TreeFilterMixinHost, node: Any) -> bool:
+        """Expand and load a folder node for explorer filtering."""
+        children = list(getattr(node, "children", []))
+        if children and not (len(children) == 1 and self._get_node_kind(children[0]) == "loading"):
+            return False
+
+        try:
+            node.expand()
+        except Exception:
+            pass
+
+        if children:
+            return False
+
+        node_path = expansion_state.get_node_path(self, node)
+        if not node_path:
+            return False
+        loading_nodes = tree_loaders.ensure_loading_nodes(self)
+        if node_path in loading_nodes:
+            return False
+
+        loading_nodes.add(node_path)
+        tree_loaders.add_loading_placeholder(self, node)
+        self._load_folder_async(node, node.data)
+        return True
+
+    def _tree_filter_node_has_pending_load(self: TreeFilterMixinHost, node: Any) -> bool:
+        """Keep loading folders visible until their children can be filtered."""
+        if not self._tree_filter_query or self._get_node_kind(node) != "folder":
+            return False
+        children = list(getattr(node, "children", []))
+        return len(children) == 1 and self._get_node_kind(children[0]) == "loading"
 
     def _get_node_label_text(self, node: Any) -> str:
         """Get the plain text label for a node."""
@@ -272,6 +354,17 @@ class TreeFilterMixin:
         """Hide nodes that don't match and aren't ancestors of matches."""
         match_ids = {id(n) for n in self._tree_filter_matches}
         ancestor_ids = set()
+        pending_ids = set()
+
+        def collect_pending(node: Any) -> None:
+            if self._tree_filter_node_has_pending_load(node):
+                pending_ids.add(id(node))
+                for child in getattr(node, "children", []):
+                    pending_ids.add(id(child))
+            for child in getattr(node, "children", []):
+                collect_pending(child)
+
+        collect_pending(self.object_tree.root)
 
         # Collect all ancestor IDs
         for node in self._tree_filter_matches:
@@ -282,7 +375,7 @@ class TreeFilterMixin:
 
         # Hide non-matching, non-ancestor nodes
         self._set_node_visibility(
-            self.object_tree.root, match_ids, ancestor_ids, visible=True
+            self.object_tree.root, match_ids, ancestor_ids, pending_ids, visible=True
         )
 
     def _set_node_visibility(
@@ -290,6 +383,7 @@ class TreeFilterMixin:
         node: Any,
         match_ids: set,
         ancestor_ids: set,
+        pending_ids: set,
         visible: bool,
     ) -> None:
         """Recursively set node visibility by removing non-matching nodes."""
@@ -300,14 +394,15 @@ class TreeFilterMixin:
             child_id = id(child)
             is_match = child_id in match_ids
             is_ancestor = child_id in ancestor_ids
-            should_show = is_match or is_ancestor or not self._tree_filter_query
+            is_pending = child_id in pending_ids
+            should_show = is_match or is_ancestor or is_pending or not self._tree_filter_query
 
             if not should_show and self._tree_filter_query:
                 # Mark for removal
                 nodes_to_remove.append(child)
             else:
                 # Recurse into visible nodes
-                self._set_node_visibility(child, match_ids, ancestor_ids, should_show)
+                self._set_node_visibility(child, match_ids, ancestor_ids, pending_ids, should_show)
 
         # Remove non-matching nodes
         for child in nodes_to_remove:

@@ -92,6 +92,20 @@ def ensure_expanded_nodes_loaded(host: TreeMixinHost, root: Any) -> None:
         stack.extend(reversed(getattr(node, "children", [])))
 
 
+def refresh_tree_filter_if_active(host: TreeMixinHost) -> None:
+    """Re-apply explorer filtering after async tree nodes finish loading."""
+    if not getattr(host, "_tree_filter_visible", False):
+        return
+    update = getattr(host, "_update_tree_filter", None)
+    if not callable(update):
+        return
+    set_timer = getattr(host, "set_timer", None)
+    if callable(set_timer):
+        set_timer(MIN_TIMER_DELAY_S, update)
+    else:
+        update()
+
+
 def load_columns_async(host: TreeMixinHost, node: Any, data: TableNode | ViewNode) -> None:
     """Spawn worker to load columns for a table/view."""
     db_name = data.database
@@ -171,6 +185,7 @@ def on_columns_loaded(
     if not columns:
         empty_child = node.add_leaf("[dim](Empty)[/]")
         empty_child.data = LoadingNode()
+        refresh_tree_filter_if_active(host)
         return
 
     batch_size = 50
@@ -270,6 +285,7 @@ def on_folder_loaded(
     if not items:
         empty_child = node.add_leaf("[dim](Empty)[/]")
         empty_child.data = LoadingNode()
+        refresh_tree_filter_if_active(host)
         return
 
     if folder_type == "databases":
@@ -287,6 +303,7 @@ def on_folder_loaded(
             db_node.allow_expand = True
             tree_builder.add_database_object_nodes(host, db_node, str(db))
 
+        refresh_tree_filter_if_active(host)
         return
 
     if folder_type in ("tables", "views"):
@@ -298,6 +315,7 @@ def on_folder_loaded(
         )
         ensure_expanded_nodes_loaded(host, node)
         tree_builder.restore_pending_cursor(host)
+        refresh_tree_filter_if_active(host)
         return
 
     for item in items:
@@ -316,6 +334,7 @@ def on_folder_loaded(
             child = node.add_leaf(escape_markup(item[1]))
             child.data = SequenceNode(database=db_name, name=item[1])
     tree_builder.restore_pending_cursor(host)
+    refresh_tree_filter_if_active(host)
 
 
 def on_tree_load_error(host: TreeMixinHost, node: Any, error_message: str) -> None:

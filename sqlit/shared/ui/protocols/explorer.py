@@ -18,6 +18,7 @@ class ExplorerStateProtocol(Protocol):
     _tree_filter_matches: list[Any]
     _tree_filter_match_index: int
     _tree_original_labels: dict[int, str]
+    _tree_filter_applied: bool
 
 
 class ExplorerActionsProtocol(Protocol):
@@ -84,7 +85,14 @@ class ExplorerActionsProtocol(Protocol):
     def _apply_filter_to_tree(self) -> None:
         ...
 
-    def _set_node_visibility(self, node: Any, match_ids: set[Any], ancestor_ids: set[Any], visible: bool) -> None:
+    def _set_node_visibility(
+        self,
+        node: Any,
+        match_ids: set[Any],
+        ancestor_ids: set[Any],
+        pending_ids: set[Any],
+        visible: bool,
+    ) -> None:
         ...
 
     def _rebuild_label_with_highlight(self, node: Any, highlighted_text: str) -> str:
