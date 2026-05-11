@@ -139,14 +139,14 @@ class TreeFilterMixin:
         self._update_footer_bindings()
 
     @staticmethod
-    def _emit_tree_filter_debug(host: Any, name: str, node: Any) -> None:
+    def _emit_tree_filter_debug(host: Any, event_name: str, node: Any) -> None:
         emit = getattr(host, "emit_debug_event", None)
         if not callable(emit):
             return
         get_kind = getattr(host, "_get_node_kind", None)
         kind = get_kind(node) if callable(get_kind) else ""
         data = getattr(node, "data", None)
-        emit(name, category="explorer", kind=kind, name=getattr(data, "name", None))
+        emit(event_name, category="explorer", kind=kind, node_name=getattr(data, "name", None))
 
     @staticmethod
     def _rebuild_tree_line_cache(object_tree: Any) -> None:

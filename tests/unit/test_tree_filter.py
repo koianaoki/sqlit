@@ -340,3 +340,53 @@ def test_tree_filter_empty_regex_prefix_remains_visible() -> None:
 
     assert host._tree_filter_regex_mode is True
     assert host.tree_filter_input.last_filter == ("/", 0, 1)
+
+
+def test_tree_highlight_debug_uses_node_name_payload() -> None:
+    from types import SimpleNamespace
+
+    from sqlit.domains.explorer.ui.mixins.tree import TreeMixin
+
+    class Host(TreeMixin):
+        def __init__(self) -> None:
+            self.events: list[tuple[str, dict[str, Any]]] = []
+            self.footer_updates = 0
+
+        def emit_debug_event(self, event_name: str, **data: Any) -> None:
+            self.events.append((event_name, data))
+
+        def _get_node_kind(self, node: FakeNode) -> str:
+            if node.data is None:
+                return ""
+            return node.data.get_node_kind()
+
+        def _update_footer_bindings(self) -> None:
+            self.footer_updates += 1
+
+    host = Host()
+    node = FakeNode("orders", TableNode(database="app_db", schema="main", name="orders"))
+
+    host.on_tree_node_highlighted(SimpleNamespace(node=node))
+
+    assert host.events == [("tree.node_highlighted", {"kind": "table", "node_name": "orders"})]
+    assert host.footer_updates == 1
+    assert host._tree_context_node is node
+
+
+def test_tree_filter_debug_uses_node_name_payload() -> None:
+    events: list[tuple[str, dict[str, Any]]] = []
+
+    class Host:
+        def emit_debug_event(self, event_name: str, **data: Any) -> None:
+            events.append((event_name, data))
+
+        def _get_node_kind(self, node: FakeNode) -> str:
+            if node.data is None:
+                return ""
+            return node.data.get_node_kind()
+
+    node = FakeNode("orders", TableNode(database="app_db", schema="main", name="orders"))
+
+    TreeFilterMixin._emit_tree_filter_debug(Host(), "tree_filter.jump_match", node)
+
+    assert events == [("tree_filter.jump_match", {"category": "explorer", "kind": "table", "node_name": "orders"})]

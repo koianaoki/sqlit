@@ -223,7 +223,7 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         self._emit_debug(
             "tree.node_highlighted",
             kind=self._get_node_kind(node) if getattr(node, "data", None) else "",
-            name=getattr(getattr(node, "data", None), "name", None),
+            node_name=getattr(getattr(node, "data", None), "name", None),
         )
         self._update_footer_bindings()
 
