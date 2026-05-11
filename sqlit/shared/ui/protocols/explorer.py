@@ -123,6 +123,9 @@ class ExplorerActionsProtocol(Protocol):
     def _tree_filter_can_match_node(self, node: Any) -> bool:
         ...
 
+    def _tree_filter_should_descend_node(self, node: Any) -> bool:
+        ...
+
     def _find_matching_nodes(self, node: Any, matches: list[Any], include_self: bool = True) -> bool:
         ...
 

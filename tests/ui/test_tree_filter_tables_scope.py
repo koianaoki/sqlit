@@ -76,6 +76,7 @@ class Host(TreeFilterMixin):
         self._pending_tree_cursor_path = ""
         self._pending_tree_cursor_connection = ""
         self.timers: list[object] = []
+        self.load_calls: list[FakeNode] = []
 
     def _get_node_kind(self, node: FakeNode) -> str:
         data = node.data
@@ -94,6 +95,9 @@ class Host(TreeFilterMixin):
 
     def _activate_tree_node(self, node: FakeNode) -> None:
         self.activated_node = node
+
+    def _load_folder_async(self, node: FakeNode, _data: object) -> None:
+        self.load_calls.append(node)
 
     def set_timer(self, _delay: float, callback: object) -> None:
         self.timers.append(callback)
@@ -125,19 +129,68 @@ def build_host() -> tuple[Host, FakeNode, FakeNode, FakeNode, FakeNode]:
     return host, database, tables, users, views
 
 
-def test_tree_filter_from_database_still_searches_the_whole_explorer() -> None:
-    host, database, tables, users, views = build_host()
+def test_tree_filter_only_searches_through_database_nodes() -> None:
+    host, database, tables, _users, views = build_host()
     host.object_tree.cursor_node = database
 
     host.action_tree_filter()
-    host._tree_filter_text = "us"
+    host._tree_filter_text = "main"
     host._update_tree_filter()
 
     assert host._tree_filter_scope_path is None
-    assert host._tree_filter_matches == [users, views.children[0]]
-    assert tables.parent is database
-    assert views.parent is database
-    assert host.tree_filter_input.last_filter == ("us", 2, 6)
+    assert host._tree_filter_matches == [database]
+    assert database.parent is host.object_tree.root
+    assert tables.parent is None
+    assert views.parent is None
+    assert host.tree_filter_input.last_filter == ("main", 1, 1)
+
+
+def test_tree_filter_accept_keeps_main_accept_behavior() -> None:
+    host, database, _tables, _users, _views = build_host()
+    host.object_tree.cursor_node = database
+    host.action_tree_filter()
+    host._tree_filter_text = "main"
+    host._update_tree_filter()
+
+    host.action_tree_filter_accept()
+
+    assert host.object_tree.selected_node is database
+    assert host.object_tree.cursor_node is database
+    assert host.activated_node is database
+    assert host._pending_tree_cursor_path == ""
+    assert host.refreshed is True
+    assert host._tree_filter_visible is False
+
+
+def test_tree_filter_does_not_load_table_folders_while_searching() -> None:
+    host, database, tables, _users, _views = build_host()
+    host.object_tree.cursor_node = database
+    host.current_connection = object()
+    host.current_provider = object()
+
+    host.action_tree_filter()
+    host._tree_filter_text = "main"
+    host._update_tree_filter()
+
+    assert host._tree_filter_scope_path is None
+    assert host.load_calls == []
+    assert tables.children
+
+
+def test_table_filter_still_loads_tables_scope_while_searching() -> None:
+    host, database, tables, users, _views = build_host()
+    host.object_tree.cursor_node = database
+    host.current_connection = object()
+    host.current_provider = object()
+    users.remove()
+    tables.children.clear()
+
+    host.action_table_filter()
+    host._tree_filter_text = "us"
+    host._update_tree_filter()
+
+    assert host._tree_filter_scope_path == "db:main/folder:tables"
+    assert host.load_calls == [tables]
 
 
 def test_table_filter_from_database_only_searches_tables_subtree() -> None:
