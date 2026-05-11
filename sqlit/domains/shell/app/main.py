@@ -233,6 +233,7 @@ class SSMSTUI(
     def _get_input_context(self) -> InputContext:
         """Build a UI-agnostic input context snapshot."""
         tree_node_kind = None
+        tree_node_folder_type = None
         tree_node_connection_name = None
         tree_node_connection_selected = False
         try:
@@ -242,8 +243,11 @@ class SSMSTUI(
                 if hasattr(self, "_get_node_kind"):
                     kind = self._get_node_kind(node)
                 tree_node_kind = kind or None
+                data = getattr(node, "data", None)
+                if tree_node_kind == "folder":
+                    folder_type = getattr(data, "folder_type", None)
+                    tree_node_folder_type = folder_type if isinstance(folder_type, str) else None
                 if tree_node_kind == "connection":
-                    data = getattr(node, "data", None)
                     config = getattr(data, "config", None)
                     if config is not None:
                         tree_node_connection_name = config.name
@@ -302,6 +306,7 @@ class SSMSTUI(
             has_connection=self.current_connection is not None,
             current_connection_name=current_connection_name,
             tree_node_kind=tree_node_kind,
+            tree_node_folder_type=tree_node_folder_type,
             tree_node_connection_name=tree_node_connection_name,
             tree_node_connection_selected=tree_node_connection_selected,
             last_result_is_error=last_result_is_error,

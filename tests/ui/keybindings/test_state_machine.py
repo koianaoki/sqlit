@@ -27,6 +27,7 @@ def make_context(**overrides: object) -> InputContext:
         "has_connection": False,
         "current_connection_name": None,
         "tree_node_kind": None,
+        "tree_node_folder_type": None,
         "tree_node_connection_name": None,
         "tree_node_connection_selected": False,
         "last_result_is_error": False,
@@ -87,23 +88,36 @@ class TestStateMachineActionValidation:
         )
         assert sm.check_action(ctx, "edit_connection") is True
 
-    def test_table_filter_only_allowed_on_database_node(self):
-        """table_filter should only be allowed when tree is on a database."""
+    def test_table_filter_allowed_on_database_tables_folder_and_table_nodes(self):
+        """table_filter should be allowed on database, Tables folder, and table nodes."""
         sm = UIStateMachine()
 
         ctx = make_context(focus="explorer", tree_node_kind="database")
         assert sm.check_action(ctx, "table_filter") is True
 
+        ctx = make_context(focus="explorer", tree_node_kind="folder", tree_node_folder_type="tables")
+        assert sm.check_action(ctx, "table_filter") is True
+
         ctx = make_context(focus="explorer", tree_node_kind="table")
+        assert sm.check_action(ctx, "table_filter") is True
+
+        ctx = make_context(focus="explorer", tree_node_kind="folder", tree_node_folder_type="views")
         assert sm.check_action(ctx, "table_filter") is False
 
-    def test_database_footer_shows_table_filter(self):
-        """Database footer should expose the table filter shortcut."""
-        sm = UIStateMachine()
-        ctx = make_context(focus="explorer", tree_node_kind="database")
+        ctx = make_context(focus="explorer", tree_node_kind="view")
+        assert sm.check_action(ctx, "table_filter") is False
 
-        left, _ = sm.get_display_bindings(ctx)
-        assert "table_filter" in [binding.action for binding in left]
+    def test_table_filter_footer_shows_on_database_tables_folder_and_table_nodes(self):
+        """Footer should expose the table filter shortcut where table_filter is available."""
+        sm = UIStateMachine()
+
+        for ctx in (
+            make_context(focus="explorer", tree_node_kind="database"),
+            make_context(focus="explorer", tree_node_kind="folder", tree_node_folder_type="tables"),
+            make_context(focus="explorer", tree_node_kind="table"),
+        ):
+            left, _ = sm.get_display_bindings(ctx)
+            assert "table_filter" in [binding.action for binding in left]
 
     def test_visual_mode_allowed_on_connection_node(self):
         """enter_tree_visual_mode should only be allowed on connection nodes."""

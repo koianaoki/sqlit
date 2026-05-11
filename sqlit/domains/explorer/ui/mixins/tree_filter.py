@@ -72,7 +72,7 @@ class TreeFilterMixin:
         if not self.object_tree.has_focus:
             self.object_tree.focus()
 
-        tables_node = self._get_database_tables_folder()
+        tables_node = self._get_table_filter_tables_folder()
         if tables_node is None:
             notify = getattr(self, "notify", None)
             if callable(notify):
@@ -97,6 +97,7 @@ class TreeFilterMixin:
         self._tree_original_labels = {}
         self._tree_filter_applied = False
         self._tree_filter_scope_path = expansion_state.get_node_path(cast(Any, self), tables_node) or None
+        self._remember_tree_filter_path(self._tree_filter_scope_path, include_self=True)
 
         self.tree_filter_input.show()
         self._ensure_tree_filter_search_nodes_loaded()
@@ -129,6 +130,7 @@ class TreeFilterMixin:
         if self._tree_filter_matches and self._tree_filter_match_index < len(self._tree_filter_matches):
             current_node = self._tree_filter_matches[self._tree_filter_match_index]
             current_path = expansion_state.get_node_path(cast(Any, self), current_node)
+            self._remember_tree_filter_path(current_path)
             self._expand_ancestors(current_node)
             move_cursor = getattr(self.object_tree, "move_cursor", None)
             if callable(move_cursor):
@@ -317,16 +319,41 @@ class TreeFilterMixin:
         if matches:
             self._jump_to_current_match()
 
-    def _get_database_tables_folder(self: TreeFilterMixinHost) -> Any | None:
-        """Return the Tables folder child for the currently selected database node."""
+    def _get_table_filter_tables_folder(self: TreeFilterMixinHost) -> Any | None:
+        """Return the Tables folder for the selected database, Tables folder, or table."""
         node = getattr(self.object_tree, "cursor_node", None)
-        if node is None or self._get_node_kind(node) != "database":
+        if node is None:
             return None
-        for child in getattr(node, "children", []):
-            data = getattr(child, "data", None)
-            if self._get_node_kind(child) == "folder" and getattr(data, "folder_type", "") == "tables":
-                return child
+
+        if self._get_node_kind(node) == "database":
+            for child in getattr(node, "children", []):
+                data = getattr(child, "data", None)
+                if self._get_node_kind(child) == "folder" and getattr(data, "folder_type", "") == "tables":
+                    return child
+            return None
+
+        current = node
+        while current and current != self.object_tree.root:
+            data = getattr(current, "data", None)
+            if self._get_node_kind(current) == "folder" and getattr(data, "folder_type", "") == "tables":
+                return current
+            current = getattr(current, "parent", None)
         return None
+
+    def _remember_tree_filter_path(self: TreeFilterMixinHost, path: str | None, *, include_self: bool = False) -> None:
+        """Keep ancestors expanded and cursor restoration pending across filter rebuilds."""
+        if not path:
+            return
+        parts = [part for part in path.split("/") if part]
+        end = len(parts) + 1 if include_self else len(parts)
+        expanded_paths: Any = getattr(self, "_expanded_paths", set())
+        if isinstance(expanded_paths, set):
+            for index in range(1, end):
+                expanded_paths.add("/".join(parts[:index]))
+            self._expanded_paths = expanded_paths
+        if not include_self:
+            cast(Any, self)._pending_tree_cursor_path = path
+            cast(Any, self)._pending_tree_cursor_connection = ""
 
     def _get_tree_filter_search_root(self: TreeFilterMixinHost) -> Any:
         """Return the subtree that should be searched by the active explorer filter."""

@@ -84,7 +84,10 @@ class ExplorerActionsProtocol(Protocol):
     def _count_all_nodes(self, root: Any | None = None) -> int:
         ...
 
-    def _get_database_tables_folder(self) -> Any | None:
+    def _get_table_filter_tables_folder(self) -> Any | None:
+        ...
+
+    def _remember_tree_filter_path(self, path: str | None, *, include_self: bool = False) -> None:
         ...
 
     def _get_tree_filter_search_root(self) -> Any:

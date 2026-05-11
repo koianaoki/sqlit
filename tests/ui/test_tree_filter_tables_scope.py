@@ -72,6 +72,9 @@ class Host(TreeFilterMixin):
         self.current_provider = None
         self.refreshed = False
         self.activated_node: FakeNode | None = None
+        self._expanded_paths: set[str] = set()
+        self._pending_tree_cursor_path = ""
+        self._pending_tree_cursor_connection = ""
 
     def _get_node_kind(self, node: FakeNode) -> str:
         data = node.data
@@ -141,6 +144,32 @@ def test_table_filter_from_database_only_searches_tables_subtree() -> None:
     assert host.tree_filter_input.last_filter == ("us", 1, 2)
 
 
+def test_table_filter_from_tables_folder_uses_that_tables_subtree() -> None:
+    host, _database, tables, users, views = build_host()
+    host.object_tree.cursor_node = tables
+
+    host.action_table_filter()
+    host._tree_filter_text = "us"
+    host._update_tree_filter()
+
+    assert host._tree_filter_scope_path == "db:main/folder:tables"
+    assert host._tree_filter_matches == [users]
+    assert views.parent is None
+
+
+def test_table_filter_from_table_uses_ancestor_tables_subtree() -> None:
+    host, _database, _tables, users, views = build_host()
+    host.object_tree.cursor_node = users
+
+    host.action_table_filter()
+    host._tree_filter_text = "us"
+    host._update_tree_filter()
+
+    assert host._tree_filter_scope_path == "db:main/folder:tables"
+    assert host._tree_filter_matches == [users]
+    assert views.parent is None
+
+
 def test_table_filter_accept_moves_cursor_to_matched_table() -> None:
     host, database, _tables, users, _views = build_host()
     host.object_tree.cursor_node = database
@@ -152,3 +181,6 @@ def test_table_filter_accept_moves_cursor_to_matched_table() -> None:
 
     assert host.object_tree.cursor_node is users
     assert host.activated_node is users
+    assert host._pending_tree_cursor_path == "db:main/folder:tables/table:public.users"
+    assert "db:main" in host._expanded_paths
+    assert "db:main/folder:tables" in host._expanded_paths

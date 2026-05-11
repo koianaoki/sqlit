@@ -19,11 +19,21 @@ class TreeOnFolderState(State):
             label="Rename",
             help="Rename connection folder",
         )
+
+        def is_tables_folder(app: InputContext) -> bool:
+            return app.tree_node_kind == "folder" and app.tree_node_folder_type == "tables"
+
         self.allows(
             "delete_connection_folder",
             is_connection_folder,
             label="Delete",
             help="Delete connection folder",
+        )
+        self.allows(
+            "table_filter",
+            is_tables_folder,
+            label="Table Filter",
+            help="Filter tables in this database",
         )
 
     def get_display_bindings(self, app: InputContext) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
@@ -40,6 +50,16 @@ class TreeOnFolderState(State):
             )
         )
         seen.add("refresh_tree")
+
+        if app.tree_node_kind == "folder" and app.tree_node_folder_type == "tables":
+            left.append(
+                DisplayBinding(
+                    key=resolve_display_key("table_filter") or "t",
+                    label="Table Filter",
+                    action="table_filter",
+                )
+            )
+            seen.add("table_filter")
 
         if app.tree_node_kind == "connection_folder":
             left.append(
