@@ -42,17 +42,13 @@ class TreeFilterMixin:
         "procedures",
     }
 
-    def action_tree_filter(self: TreeFilterMixinHost, initial_text: str | None = None) -> None:
+    def action_tree_filter(self: TreeFilterMixinHost) -> None:
         """Open the tree filter."""
         if not self.object_tree.has_focus:
             self.object_tree.focus()
 
-        if initial_text is None:
-            opened_with_slash = getattr(self, "_last_key_char", None) == "/" or getattr(self, "_last_key", None) == "slash"
-            initial_text = "/" if opened_with_slash else ""
-
         self._tree_filter_visible = True
-        self._tree_filter_text = initial_text
+        self._tree_filter_text = ""
         self._tree_filter_query = ""
         self._tree_filter_fuzzy = False
         self._tree_filter_regex_mode = False
@@ -166,7 +162,7 @@ class TreeFilterMixin:
                 return
 
             if key == "/":
-                self.action_tree_filter("/")
+                self.action_tree_filter()
                 event.prevent_default()
                 event.stop()
                 return
@@ -189,7 +185,7 @@ class TreeFilterMixin:
         char = getattr(event, "character", None)
         if char and char.isprintable():
             if char == "/" and not self._tree_filter_typing:
-                self.action_tree_filter("/")
+                self.action_tree_filter()
                 event.prevent_default()
                 event.stop()
                 return
@@ -236,7 +232,7 @@ class TreeFilterMixin:
             self._tree_filter_matches = []
             self._tree_filter_applied = False
             self._ensure_tree_filter_search_nodes_loaded()
-            self.tree_filter_input.set_filter(raw_text, 0, total)
+            self.tree_filter_input.set_filter("", 0, total)
             return
 
         self._ensure_tree_filter_search_nodes_loaded()
