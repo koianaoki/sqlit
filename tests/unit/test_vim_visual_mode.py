@@ -29,6 +29,7 @@ def make_context(**overrides: object) -> InputContext:
         "has_connection": False,
         "current_connection_name": None,
         "tree_node_kind": None,
+        "tree_node_folder_type": None,
         "tree_node_connection_name": None,
         "tree_node_connection_selected": False,
         "last_result_is_error": False,

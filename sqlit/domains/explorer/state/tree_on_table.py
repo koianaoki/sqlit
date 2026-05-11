@@ -12,9 +12,18 @@ class TreeOnTableState(State):
     help_category = "Explorer"
 
     def _setup_actions(self) -> None:
+        def is_table(app: InputContext) -> bool:
+            return app.tree_node_kind == "table"
+
         self.allows("select_table", label="Select TOP 100", help="Select TOP 100 (table/view)")
         self.allows("show_table_columns", label="Show Columns", help="Show table columns")
         self.allows("show_table_indexes", label="Show Indexes", help="Show table indexes")
+        self.allows(
+            "table_filter",
+            is_table,
+            label="Table Filter",
+            help="Filter tables in this database",
+        )
 
     def get_display_bindings(self, app: InputContext) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = []
@@ -46,6 +55,15 @@ class TreeOnTableState(State):
             )
         )
         seen.add("show_table_indexes")
+        if app.tree_node_kind == "table":
+            left.append(
+                DisplayBinding(
+                    key=resolve_display_key("table_filter") or "t",
+                    label="Table Filter",
+                    action="table_filter",
+                )
+            )
+            seen.add("table_filter")
         left.append(
             DisplayBinding(
                 key=resolve_display_key("refresh_tree") or "f",

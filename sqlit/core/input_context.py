@@ -28,6 +28,7 @@ class InputContext:
     has_connection: bool
     current_connection_name: str | None
     tree_node_kind: str | None
+    tree_node_folder_type: str | None
     tree_node_connection_name: str | None
     tree_node_connection_selected: bool
     last_result_is_error: bool
