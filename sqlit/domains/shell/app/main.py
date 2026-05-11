@@ -7,8 +7,8 @@ import platform
 import subprocess
 import sys
 import time
-from datetime import datetime
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
@@ -200,6 +200,7 @@ class SSMSTUI(
         self._table_metadata: dict[str, tuple[str, str, str | None]] = {}
         self._columns_loading: set[str] = set()
         self._state_machine = UIStateMachine()
+        self._tree_context_node: Any | None = None
         self._last_query_table: dict[str, Any] | None = None
         self._pending_result_table_info: dict[str, Any] | None = None
         self._query_target_database: str | None = None  # Target DB for auto-generated queries
@@ -230,13 +231,39 @@ class SSMSTUI(
             widget = getattr(widget, "parent", None)
         return "none"
 
+    def _get_tree_context_node(self) -> Any | None:
+        """Return the node that should drive explorer context-sensitive actions."""
+        try:
+            tree = self.object_tree
+        except Exception:
+            return None
+
+        context_node = getattr(self, "_tree_context_node", None)
+        if context_node is not None and self._is_tree_node_attached(context_node, tree):
+            return context_node
+
+        if context_node is not None:
+            self._tree_context_node = None
+
+        return getattr(tree, "cursor_node", None)
+
+    def _is_tree_node_attached(self, node: Any, tree: Any) -> bool:
+        """Return whether a tree node still belongs to the current explorer tree."""
+        root = getattr(tree, "root", None)
+        current = node
+        while current is not None:
+            if current is root:
+                return True
+            current = getattr(current, "parent", None)
+        return False
+
     def _get_input_context(self) -> InputContext:
         """Build a UI-agnostic input context snapshot."""
         tree_node_kind = None
         tree_node_connection_name = None
         tree_node_connection_selected = False
         try:
-            node = self.object_tree.cursor_node
+            node = self._get_tree_context_node()
             if node is not None:
                 kind = ""
                 if hasattr(self, "_get_node_kind"):

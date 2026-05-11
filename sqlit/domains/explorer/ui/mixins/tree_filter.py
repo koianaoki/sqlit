@@ -128,6 +128,8 @@ class TreeFilterMixin:
         # line (often the database node).
         self._expand_ancestors(node)
         TreeFilterMixin._rebuild_tree_line_cache(self.object_tree)
+        self._tree_context_node = node  # type: ignore[attr-defined]
+        TreeFilterMixin._emit_tree_filter_debug(self, "tree_filter.jump_match", node)
         # Move the cursor as well as the selection so context-sensitive
         # bindings (which read cursor_node) match the filtered item.
         move_cursor = getattr(self.object_tree, "move_cursor", None)
@@ -137,12 +139,22 @@ class TreeFilterMixin:
         self._update_footer_bindings()
 
     @staticmethod
+    def _emit_tree_filter_debug(host: Any, name: str, node: Any) -> None:
+        emit = getattr(host, "emit_debug_event", None)
+        if not callable(emit):
+            return
+        get_kind = getattr(host, "_get_node_kind", None)
+        kind = get_kind(node) if callable(get_kind) else ""
+        data = getattr(node, "data", None)
+        emit(name, category="explorer", kind=kind, name=getattr(data, "name", None))
+
+    @staticmethod
     def _rebuild_tree_line_cache(object_tree: Any) -> None:
         """Synchronize Textual tree line metadata after filter mutations."""
         try:
             # Textual builds _tree_lines lazily and assigns each node's _line.
             # Accessing it after mutations keeps move_cursor(node) accurate.
-            getattr(object_tree, "_tree_lines")
+            _ = object_tree._tree_lines
         except Exception:
             pass
 

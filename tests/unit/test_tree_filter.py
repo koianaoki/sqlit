@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlit.core.vim import VimMode
 from sqlit.domains.explorer.domain.tree_nodes import DatabaseNode, FolderNode, LoadingNode, TableNode
 from sqlit.domains.explorer.ui.mixins.tree_filter import TreeFilterMixin
+from sqlit.domains.shell.app.main import SSMSTUI
 
 
 class FakeNode:
@@ -211,6 +213,59 @@ def test_tree_filter_moves_cursor_from_database_to_matching_table() -> None:
     assert host._tree_filter_matches == [orders]
     assert host.object_tree.selected_node is orders
     assert host.object_tree.cursor_node is orders
+    assert host._tree_context_node is orders
+
+
+def test_input_context_prefers_highlighted_tree_context_node() -> None:
+    root = FakeNode("root")
+    database = root.add("app_db", DatabaseNode(name="app_db"))
+    tables = database.add("Tables", FolderNode(folder_type="tables", database="app_db"))
+    orders = tables.add("orders", TableNode(database="app_db", schema="main", name="orders"))
+    database.expand()
+    tables.expand()
+    tree = FakeTree(root)
+    tree.cursor_node = database
+
+    app = SSMSTUI()
+    app.query_one = lambda *args, **kwargs: tree
+    app._update_footer_bindings = lambda: None
+    app._update_status_bar = lambda: None
+    app._get_focus_pane = lambda: "explorer"
+    app.vim_mode = VimMode.NORMAL
+    app._leader_pending = False
+    app._leader_pending_menu = "leader"
+    app._tree_filter_visible = False
+    app._selected_connection_names = set()
+    app._tree_visual_mode_anchor = None
+    app._autocomplete_visible = False
+    app._results_filter_visible = False
+    app._value_view_active = False
+    app._last_result_columns = []
+    app._last_result_rows = []
+    app._count_buffer = ""
+    app._tree_context_node = orders
+    app._get_node_kind = lambda node: node.data.get_node_kind() if node.data else ""
+
+    ctx = SSMSTUI._get_input_context(app)
+
+    assert ctx.tree_node_kind == "table"
+
+
+def test_tree_context_node_falls_back_to_cursor_when_detached() -> None:
+    root = FakeNode("root")
+    database = root.add("app_db", DatabaseNode(name="app_db"))
+    detached = FakeNode("orders", TableNode(database="app_db", schema="main", name="orders"))
+    tree = FakeTree(root)
+    tree.cursor_node = database
+
+    app = SSMSTUI()
+    app.query_one = lambda *args, **kwargs: tree
+    app._tree_context_node = detached
+
+    node = SSMSTUI._get_tree_context_node(app)
+
+    assert node is database
+    assert app._tree_context_node is None
 
 
 def test_tree_filter_regex_matches_table_labels() -> None:

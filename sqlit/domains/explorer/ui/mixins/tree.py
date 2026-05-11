@@ -191,10 +191,11 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
 
     def on_tree_node_selected(self: TreeMixinHost, event: Tree.NodeSelected) -> None:
         """Handle tree node selection (double-click/enter)."""
+        node = event.node
+        self._tree_context_node = node  # type: ignore[attr-defined]
         if getattr(self, "_tree_filter_visible", False):
             return
 
-        node = event.node
         self._activate_tree_node(node)
 
     def _activate_tree_node(self: TreeMixinHost, node: Any) -> None:
@@ -217,6 +218,13 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
 
     def on_tree_node_highlighted(self: TreeMixinHost, event: Tree.NodeHighlighted) -> None:
         """Update footer when tree selection changes."""
+        node = event.node
+        self._tree_context_node = node  # type: ignore[attr-defined]
+        self._emit_debug(
+            "tree.node_highlighted",
+            kind=self._get_node_kind(node) if getattr(node, "data", None) else "",
+            name=getattr(getattr(node, "data", None), "name", None),
+        )
         self._update_footer_bindings()
 
     def action_refresh_tree(self: TreeMixinHost) -> None:
