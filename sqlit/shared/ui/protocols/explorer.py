@@ -22,6 +22,8 @@ class ExplorerStateProtocol(Protocol):
     _tree_filter_match_index: int
     _tree_original_labels: dict[int, str]
     _tree_filter_applied: bool
+    _tree_filter_scope_path: str
+    _tree_filter_scope_kinds: set[str] | None
     _TREE_FILTER_LOADABLE_FOLDERS: set[str]
     _pending_tree_cursor_path: str
     _pending_tree_cursor_connection: str
@@ -67,10 +69,19 @@ class ExplorerActionsProtocol(Protocol):
     def _update_tree_filter(self) -> None:
         ...
 
-    def _prepare_tree_filter_accept_target(self, node: Any) -> str:
+    def _remember_tree_filter_accept_expansion(self, node: Any) -> None:
         ...
 
-    def _restore_tree_filter_accept_cursor(self, target_path: str) -> Any | None:
+    def _select_tree_filter_accept_target(self, target_path: str) -> Any | None:
+        ...
+
+    def _configure_tree_filter_scope(self) -> None:
+        ...
+
+    def _tree_filter_scope_node(self) -> Any:
+        ...
+
+    def _tree_filter_node_is_searchable(self, node: Any) -> bool:
         ...
 
     def _extract_tree_filter_regex_query(self, raw_text: str) -> str | None:
@@ -103,7 +114,7 @@ class ExplorerActionsProtocol(Protocol):
     def _show_all_tree_nodes(self) -> None:
         ...
 
-    def _count_all_nodes(self) -> int:
+    def _count_all_nodes(self, root: Any | None = None) -> int:
         ...
 
     def _find_matching_nodes(self, node: Any, matches: list[Any]) -> bool:

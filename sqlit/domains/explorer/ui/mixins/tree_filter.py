@@ -31,6 +31,8 @@ class TreeFilterMixin:
     _tree_filter_match_index: int = 0
     _tree_original_labels: dict[int, str] = {}
     _tree_filter_applied: bool = False
+    _tree_filter_scope_path: str = ""
+    _tree_filter_scope_kinds: set[str] | None = None
 
     _TREE_FILTER_LOADABLE_FOLDERS = {
         "databases",
@@ -63,6 +65,7 @@ class TreeFilterMixin:
         self._tree_filter_match_index = 0
         self._tree_original_labels = {}
         self._tree_filter_applied = False
+        self._configure_tree_filter_scope()
 
         self.tree_filter_input.show()
         self._ensure_tree_filter_search_nodes_loaded()
@@ -79,6 +82,8 @@ class TreeFilterMixin:
         self._tree_filter_regex = None
         self._tree_filter_regex_error = None
         self._tree_filter_typing = False
+        self._tree_filter_scope_path = ""
+        self._tree_filter_scope_kinds = None
         self.tree_filter_input.hide()
         self._restore_tree_labels()
         self._show_all_tree_nodes()
@@ -87,52 +92,39 @@ class TreeFilterMixin:
 
     def action_tree_filter_accept(self: TreeFilterMixinHost) -> None:
         """Accept current filter selection, close filter, and activate the node."""
-        # Store current match before closing because closing the filter rebuilds the tree.
+        # Store current match before closing
         current_node = None
         target_path = ""
         if self._tree_filter_matches and self._tree_filter_match_index < len(self._tree_filter_matches):
             current_node = self._tree_filter_matches[self._tree_filter_match_index]
-            target_path = self._prepare_tree_filter_accept_target(current_node)
+            target_path = expansion_state.get_node_path(self, current_node)
+            self._remember_tree_filter_accept_expansion(current_node)
 
-        # Close the filter. This restores the full tree and may recreate nodes.
+        # Close the filter
         self.action_tree_filter_close()
 
-        restored_node = None
         if target_path:
-            restored_node = self._restore_tree_filter_accept_cursor(target_path)
+            restored_node = self._select_tree_filter_accept_target(target_path)
+            if restored_node is not None:
+                current_node = restored_node
 
-        # Activate the selected node (connect to server, expand folder, etc.). Prefer the
-        # node from the restored tree when it is already available; otherwise keep the
-        # original node so existing connection activation behavior is preserved.
-        activation_node = restored_node or current_node
-        if activation_node and activation_node.data:
-            self._activate_tree_node(activation_node)
+        # Activate the selected node (connect to server, expand folder, etc.)
+        if current_node and current_node.data:
+            self._activate_tree_node(current_node)
 
-    def _prepare_tree_filter_accept_target(self: Any, node: Any) -> str:
-        """Persist enough tree state to keep the accepted filter match focused."""
-        target_path = expansion_state.get_node_path(self, node)
-        if not target_path:
-            return ""
-
+    def _remember_tree_filter_accept_expansion(self: TreeFilterMixinHost, node: Any) -> None:
+        """Keep ancestors expanded so a filtered match can be selected after restore."""
         expanded_paths = set(getattr(self, "_expanded_paths", set()))
         current = getattr(node, "parent", None)
         while current and current != self.object_tree.root:
             path = expansion_state.get_node_path(self, current)
             if path:
                 expanded_paths.add(path)
-            try:
-                current.expand()
-            except Exception:
-                pass
             current = getattr(current, "parent", None)
         self._expanded_paths = expanded_paths
 
-        self._pending_tree_cursor_path = target_path
-        self._pending_tree_cursor_connection = ""
-        return target_path
-
-    def _restore_tree_filter_accept_cursor(self: Any, target_path: str) -> Any | None:
-        """Move the explorer cursor to the accepted filter match when available."""
+    def _select_tree_filter_accept_target(self: TreeFilterMixinHost, target_path: str) -> Any | None:
+        """Select an accepted filter match in the restored tree, or defer it."""
         node = expansion_state.find_node_by_path(self, self.object_tree.root, target_path)
         if node is None:
             self._pending_tree_cursor_path = target_path
@@ -140,14 +132,43 @@ class TreeFilterMixin:
             return None
 
         self._expand_ancestors(node)
-        move_cursor = getattr(self.object_tree, "move_cursor", None)
-        if callable(move_cursor):
-            move_cursor(node)
-        else:
-            self.object_tree.select_node(node)
+        self.object_tree.move_cursor(node)
         self._pending_tree_cursor_path = ""
         self._pending_tree_cursor_connection = ""
         return node
+
+    def _configure_tree_filter_scope(self: TreeFilterMixinHost) -> None:
+        """Scope filtering to table objects when opened from a Tables folder."""
+        self._tree_filter_scope_path = ""
+        self._tree_filter_scope_kinds = None
+
+        node = getattr(self.object_tree, "cursor_node", None)
+        if not node or not getattr(node, "data", None):
+            return
+        if self._get_node_kind(node) != "folder":
+            return
+        if getattr(node.data, "folder_type", "") != "tables":
+            return
+
+        path = expansion_state.get_node_path(self, node)
+        if not path:
+            return
+        self._tree_filter_scope_path = path
+        self._tree_filter_scope_kinds = {"table"}
+
+    def _tree_filter_scope_node(self: TreeFilterMixinHost) -> Any:
+        """Return the root node for the current filter scope."""
+        if not self._tree_filter_scope_path:
+            return self.object_tree.root
+        node = expansion_state.find_node_by_path(self, self.object_tree.root, self._tree_filter_scope_path)
+        return node or self.object_tree.root
+
+    def _tree_filter_node_is_searchable(self: TreeFilterMixinHost, node: Any) -> bool:
+        """Return whether a node itself should be matched by the current filter."""
+        scope_kinds = self._tree_filter_scope_kinds
+        if scope_kinds is None:
+            return True
+        return self._get_node_kind(node) in scope_kinds
 
     def action_tree_filter_next(self: TreeFilterMixinHost) -> None:
         """Move to next filter match."""
@@ -254,7 +275,8 @@ class TreeFilterMixin:
     def _update_tree_filter(self: TreeFilterMixinHost) -> None:
         """Update the tree based on current filter text."""
         self._restore_tree_labels()
-        total = self._count_all_nodes()
+        scope_node = self._tree_filter_scope_node()
+        total = self._count_all_nodes(scope_node)
         raw_text = self._tree_filter_text
         self._tree_filter_fuzzy = raw_text.startswith("~")
         self._tree_filter_regex_mode = False
@@ -289,7 +311,7 @@ class TreeFilterMixin:
 
         # Find all matching nodes
         matches: list[Any] = []
-        self._find_matching_nodes(self.object_tree.root, matches)
+        self._find_matching_nodes(scope_node, matches)
 
         self._tree_filter_matches = matches
         self._tree_filter_match_index = 0
@@ -346,7 +368,7 @@ class TreeFilterMixin:
 
         # Get node label text for matching
         label_text = self._get_node_label_text(node)
-        if label_text:
+        if label_text and self._tree_filter_node_is_searchable(node):
             if self._tree_filter_fuzzy:
                 matched, indices = fuzzy_match(self._tree_filter_query, label_text)
             elif self._tree_filter_regex_mode:
@@ -375,7 +397,7 @@ class TreeFilterMixin:
             return False
 
         started = False
-        stack = [self.object_tree.root]
+        stack = [self._tree_filter_scope_node()]
         while stack:
             node = stack.pop()
             if self._tree_filter_should_load_node(node):
@@ -525,16 +547,17 @@ class TreeFilterMixin:
         restore_node(self.object_tree.root)
         self._tree_original_labels = {}
 
-    def _count_all_nodes(self: TreeFilterMixinHost) -> int:
-        """Count all searchable nodes in the tree."""
+    def _count_all_nodes(self: TreeFilterMixinHost, root: Any | None = None) -> int:
+        """Count all searchable nodes in the current tree filter scope."""
         count = 0
+        root = root or self.object_tree.root
 
         def count_nodes(node: Any) -> None:
             nonlocal count
-            if node.data and self._get_node_label_text(node):
+            if node.data and self._get_node_label_text(node) and self._tree_filter_node_is_searchable(node):
                 count += 1
             for child in node.children:
                 count_nodes(child)
 
-        count_nodes(self.object_tree.root)
+        count_nodes(root)
         return count

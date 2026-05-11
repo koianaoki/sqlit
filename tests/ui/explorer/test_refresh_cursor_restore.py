@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 from sqlit.domains.connections.providers.explorer_nodes import DefaultExplorerNodeProvider
 from sqlit.domains.connections.providers.model import SchemaCapabilities
-from sqlit.domains.explorer.domain.tree_nodes import ColumnNode, ConnectionNode, FolderNode, TableNode
+from sqlit.domains.explorer.domain.tree_nodes import ColumnNode, ConnectionNode, FolderNode, TableNode, ViewNode
 from sqlit.domains.explorer.ui.mixins.tree_filter import TreeFilterMixin
 from sqlit.domains.explorer.ui.tree import builder as tree_builder
 from sqlit.domains.explorer.ui.tree import expansion_state
@@ -103,6 +103,10 @@ class MockTree:
     def __init__(self) -> None:
         self.root = MockTreeNode("root", tree=self)
         self.cursor_node: MockTreeNode | None = None
+        self.has_focus = True
+
+    def focus(self) -> None:
+        self.has_focus = True
 
     def _visible_nodes(self) -> list[MockTreeNode]:
         nodes: list[MockTreeNode] = []
@@ -381,7 +385,7 @@ class MockFilterHost(TreeFilterMixin, MockHost):
         self.activated_node = node
 
 
-def test_tree_filter_accept_keeps_table_cursor_after_restoring_tree() -> None:
+def test_tree_filter_from_tables_folder_searches_only_tables_and_restores_cursor() -> None:
     host = MockFilterHost()
     tree_builder.refresh_tree_incremental(host)
 
@@ -397,30 +401,34 @@ def test_tree_filter_accept_keeps_table_cursor_after_restoring_tree() -> None:
         tables,
         None,
         "tables",
-        [("table", "public", "posts"), ("table", "public", "users")],
+        [("table", "public", "users"), ("table", "public", "posts")],
     )
 
-    users = _find_table(host.object_tree.root, "users")
-    assert users is not None
-    host._tree_filter_visible = True
-    host._tree_filter_text = "users"
-    host._tree_filter_query = ""
-    host._tree_filter_fuzzy = False
-    host._tree_filter_regex_mode = False
-    host._tree_filter_regex = None
-    host._tree_filter_regex_error = None
-    host._tree_filter_typing = True
-    host._tree_filter_matches = []
-    host._tree_filter_match_index = 0
-    host._tree_original_labels = {}
-    host._tree_filter_applied = False
+    views = _find_folder(host.object_tree.root, "views")
+    assert views is not None
+    views.expand()
+    tree_loaders.on_folder_loaded(
+        host,
+        views,
+        None,
+        "views",
+        [("view", "public", "users_view")],
+    )
 
-    host._update_tree_filter()
-    assert host.object_tree.cursor_node is users
+    host.object_tree.move_cursor(tables)
+    host.action_tree_filter("users")
+
+    assert host._tree_filter_scope_kinds == {"table"}
+    assert [node.data.name for node in host._tree_filter_matches] == ["users"]
+    assert all(isinstance(node.data, TableNode) for node in host._tree_filter_matches)
+    assert not any(isinstance(node.data, ViewNode) for node in host._tree_filter_matches)
+
+    filtered_users = host._tree_filter_matches[0]
+    assert host.object_tree.cursor_node is filtered_users
 
     host.action_tree_filter_accept()
 
-    assert host.object_tree.cursor_node is not users
+    assert host.object_tree.cursor_node is not filtered_users
     assert getattr(host, "_pending_tree_cursor_path", "").endswith("/folder:tables/table:public.users")
 
     tables_after = _find_folder(host.object_tree.root, "tables")
@@ -430,7 +438,7 @@ def test_tree_filter_accept_keeps_table_cursor_after_restoring_tree() -> None:
         tables_after,
         None,
         "tables",
-        [("table", "public", "posts"), ("table", "public", "users")],
+        [("table", "public", "users"), ("table", "public", "posts")],
     )
 
     assert getattr(host.object_tree.cursor_node, "data", None) is not None
