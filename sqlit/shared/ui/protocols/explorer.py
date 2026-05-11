@@ -158,7 +158,6 @@ class ExplorerActionsProtocol(Protocol):
         match_ids: set[Any],
         ancestor_ids: set[Any],
         pending_ids: set[Any],
-        visible: bool,
     ) -> None:
         ...
 

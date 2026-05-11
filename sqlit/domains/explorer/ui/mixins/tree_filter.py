@@ -602,9 +602,7 @@ class TreeFilterMixin:
                 current = current.parent
 
         # Hide non-matching, non-ancestor nodes
-        self._set_node_visibility(
-            self.object_tree.root, match_ids, ancestor_ids, pending_ids, visible=True
-        )
+        self._set_node_visibility(self.object_tree.root, match_ids, ancestor_ids, pending_ids)
 
     def _set_node_visibility(
         self: TreeFilterMixinHost,
@@ -612,7 +610,6 @@ class TreeFilterMixin:
         match_ids: set,
         ancestor_ids: set,
         pending_ids: set,
-        visible: bool,
     ) -> None:
         """Recursively set node visibility by removing non-matching nodes."""
         # Collect nodes to remove (can't modify children while iterating)
@@ -630,7 +627,7 @@ class TreeFilterMixin:
                 nodes_to_remove.append(child)
             else:
                 # Recurse into visible nodes
-                self._set_node_visibility(child, match_ids, ancestor_ids, pending_ids, should_show)
+                self._set_node_visibility(child, match_ids, ancestor_ids, pending_ids)
 
         # Remove non-matching nodes
         for child in nodes_to_remove:
