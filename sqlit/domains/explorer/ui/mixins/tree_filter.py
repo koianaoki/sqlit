@@ -48,21 +48,7 @@ class TreeFilterMixin:
         if not self.object_tree.has_focus:
             self.object_tree.focus()
 
-        self._tree_filter_visible = True
-        self._tree_filter_text = ""
-        self._tree_filter_query = ""
-        self._tree_filter_fuzzy = False
-        self._tree_filter_regex_mode = False
-        self._tree_filter_regex = None
-        self._tree_filter_regex_error = None
-        self._tree_filter_typing = True
-        self._tree_filter_matches = []
-        self._tree_filter_match_index = 0
-        self._tree_original_labels = {}
-        self._tree_filter_applied = False
-        self._tree_filter_scope_path = None
-
-        self.tree_filter_input.show()
+        self._begin_tree_filter_session(scope_path=None)
         self._update_tree_filter()
         self._update_footer_bindings()
 
@@ -83,6 +69,15 @@ class TreeFilterMixin:
         except Exception:
             pass
 
+        scope_path = expansion_state.get_node_path(cast(Any, self), tables_node) or None
+        self._begin_tree_filter_session(scope_path=scope_path)
+        self._remember_tree_filter_path(scope_path, include_self=True)
+        self._ensure_tree_filter_search_nodes_loaded()
+        self._update_tree_filter()
+        self._update_footer_bindings()
+
+    def _begin_tree_filter_session(self: TreeFilterMixinHost, *, scope_path: str | None) -> None:
+        """Reset transient filter state and show the filter input for a new session."""
         self._tree_filter_visible = True
         self._tree_filter_text = ""
         self._tree_filter_query = ""
@@ -95,13 +90,8 @@ class TreeFilterMixin:
         self._tree_filter_match_index = 0
         self._tree_original_labels = {}
         self._tree_filter_applied = False
-        self._tree_filter_scope_path = expansion_state.get_node_path(cast(Any, self), tables_node) or None
-        self._remember_tree_filter_path(self._tree_filter_scope_path, include_self=True)
-
+        self._tree_filter_scope_path = scope_path
         self.tree_filter_input.show()
-        self._ensure_tree_filter_search_nodes_loaded()
-        self._update_tree_filter()
-        self._update_footer_bindings()
 
     def action_tree_filter_close(self: TreeFilterMixinHost) -> None:
         """Close the tree filter and restore tree."""

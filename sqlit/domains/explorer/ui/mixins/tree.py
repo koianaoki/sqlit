@@ -364,6 +364,38 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
             return None
         return node.data
 
+    def _show_table_metadata_result(
+        self: TreeMixinHost,
+        result_columns: list[str],
+        rows: list[Any],
+        *,
+        query_text: str,
+        message_prefix: str,
+        table_name: str,
+    ) -> None:
+        """Render table metadata rows and keep last-result state in sync."""
+        self._replace_results_table(result_columns, rows)
+        self._last_result_columns = result_columns
+        self._last_result_rows = rows
+        self._last_result_row_count = len(rows)
+        self.query_input.text = query_text
+        self.notify(f"{message_prefix}: {table_name} ({len(rows)})")
+
+    def _fetch_cursor_result(self: TreeMixinHost, query: str) -> tuple[list[str], list[tuple[Any, ...]]]:
+        """Execute a metadata query and return cursor columns/rows."""
+        if self.current_connection is None:
+            raise RuntimeError("No active database connection")
+        cursor = self.current_connection.cursor()
+        try:
+            cursor.execute(query)
+            result_columns = [column[0] for column in cursor.description]
+            rows = [tuple(row) for row in cursor.fetchall()]
+            return result_columns, rows
+        finally:
+            close = getattr(cursor, "close", None)
+            if callable(close):
+                close()
+
     def action_show_table_columns(self: TreeMixinHost) -> None:
         """Show the selected table/view columns in the results panel."""
         data = self._selected_table_node_data()
@@ -389,12 +421,13 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
             for index, column in enumerate(columns)
         ]
         result_columns = ["#", "Column", "Type", "Primary Key"]
-        self._replace_results_table(result_columns, rows)
-        self._last_result_columns = result_columns
-        self._last_result_rows = rows
-        self._last_result_row_count = len(rows)
-        self.query_input.text = f"-- Columns for {data.name}"
-        self.notify(f"Columns: {data.name} ({len(rows)})")
+        self._show_table_metadata_result(
+            result_columns,
+            rows,
+            query_text=f"-- Columns for {data.name}",
+            message_prefix="Columns",
+            table_name=data.name,
+        )
 
     def _is_mysql_like_provider(self: TreeMixinHost) -> bool:
         """Return True for providers that support MySQL SHOW FULL COLUMNS."""
@@ -421,23 +454,18 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         table_ref = self._format_mysql_table_reference(data.database, data.name)
         query = f"SHOW FULL COLUMNS FROM {table_ref}"
         try:
-            cursor = self.current_connection.cursor()
-            cursor.execute(query)
-            result_columns = [column[0] for column in cursor.description]
-            rows = [tuple(row) for row in cursor.fetchall()]
-            close = getattr(cursor, "close", None)
-            if callable(close):
-                close()
+            result_columns, rows = self._fetch_cursor_result(query)
         except Exception as error:
             self.notify(f"Error getting table columns: {error}", severity="error")
             return True
 
-        self._replace_results_table(result_columns, rows)
-        self._last_result_columns = result_columns
-        self._last_result_rows = rows
-        self._last_result_row_count = len(rows)
-        self.query_input.text = query
-        self.notify(f"Columns: {data.name} ({len(rows)})")
+        self._show_table_metadata_result(
+            result_columns,
+            rows,
+            query_text=query,
+            message_prefix="Columns",
+            table_name=data.name,
+        )
         return True
 
     def action_show_table_indexes(self: TreeMixinHost) -> None:
@@ -483,12 +511,13 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
             return
 
         result_columns = ["Index", "Columns", "Unique", "Definition"]
-        self._replace_results_table(result_columns, rows)
-        self._last_result_columns = result_columns
-        self._last_result_rows = rows
-        self._last_result_row_count = len(rows)
-        self.query_input.text = f"-- Indexes for {data.name}"
-        self.notify(f"Indexes: {data.name} ({len(rows)})")
+        self._show_table_metadata_result(
+            result_columns,
+            rows,
+            query_text=f"-- Indexes for {data.name}",
+            message_prefix="Indexes",
+            table_name=data.name,
+        )
 
     def _show_mysql_indexes(self: TreeMixinHost, data: Any) -> bool:
         """Display MySQL/MariaDB SHOW INDEX output for the selected table."""
@@ -498,23 +527,18 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         table_ref = self._format_mysql_table_reference(data.database, data.name)
         query = f"SHOW INDEX FROM {table_ref}"
         try:
-            cursor = self.current_connection.cursor()
-            cursor.execute(query)
-            result_columns = [column[0] for column in cursor.description]
-            rows = [tuple(row) for row in cursor.fetchall()]
-            close = getattr(cursor, "close", None)
-            if callable(close):
-                close()
+            result_columns, rows = self._fetch_cursor_result(query)
         except Exception as error:
             self.notify(f"Error getting table indexes: {error}", severity="error")
             return True
 
-        self._replace_results_table(result_columns, rows)
-        self._last_result_columns = result_columns
-        self._last_result_rows = rows
-        self._last_result_row_count = len(rows)
-        self.query_input.text = query
-        self.notify(f"Indexes: {data.name} ({len(rows)})")
+        self._show_table_metadata_result(
+            result_columns,
+            rows,
+            query_text=query,
+            message_prefix="Indexes",
+            table_name=data.name,
+        )
         return True
 
     def _index_table_matches(self: TreeMixinHost, index_table: str, table_name: str, schema: str | None = None) -> bool:

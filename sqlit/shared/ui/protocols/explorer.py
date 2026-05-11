@@ -48,6 +48,20 @@ class ExplorerActionsProtocol(Protocol):
     def _activate_tree_node(self, node: Any) -> None:
         ...
 
+    def _show_table_metadata_result(
+        self,
+        result_columns: list[str],
+        rows: list[Any],
+        *,
+        query_text: str,
+        message_prefix: str,
+        table_name: str,
+    ) -> None:
+        ...
+
+    def _fetch_cursor_result(self, query: str) -> tuple[list[str], list[tuple[Any, ...]]]:
+        ...
+
     def action_tree_filter(self) -> None:
         ...
 
@@ -55,6 +69,9 @@ class ExplorerActionsProtocol(Protocol):
         ...
 
     def action_table_filter(self) -> None:
+        ...
+
+    def _begin_tree_filter_session(self, *, scope_path: str | None) -> None:
         ...
 
     def _close_tree_filter_state(self, *, restore_tree: bool) -> None:
