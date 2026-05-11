@@ -60,6 +60,9 @@ class FakeTree:
     def select_node(self, node: FakeNode) -> None:
         self.selected_node = node
 
+    def move_cursor(self, node: FakeNode) -> None:
+        self.cursor_node = node
+
 
 class Host(TreeFilterMixin):
     def __init__(self) -> None:
@@ -68,6 +71,7 @@ class Host(TreeFilterMixin):
         self.current_connection = None
         self.current_provider = None
         self.refreshed = False
+        self.activated_node: FakeNode | None = None
 
     def _get_node_kind(self, node: FakeNode) -> str:
         data = node.data
@@ -85,33 +89,48 @@ class Host(TreeFilterMixin):
         self.refreshed = True
 
     def _activate_tree_node(self, node: FakeNode) -> None:
-        pass
+        self.activated_node = node
 
 
-def build_host() -> tuple[Host, FakeNode, FakeNode, FakeNode]:
+def build_host() -> tuple[Host, FakeNode, FakeNode, FakeNode, FakeNode]:
     host = Host()
     database = host.object_tree.root.add("main")
     database.data = DatabaseNode(name="main")
 
-    tables = database.add("tables")
+    tables = database.add("Tables")
     tables.data = FolderNode(folder_type="tables", database="main")
     users = tables.add("users")
     users.data = TableNode(database="main", schema="public", name="users")
     orders = tables.add("orders")
     orders.data = TableNode(database="main", schema="public", name="orders")
 
-    views = database.add("views")
+    views = database.add("Views")
     views.data = FolderNode(folder_type="views", database="main")
     user_view = views.add("user_view")
     user_view.data = ViewNode(database="main", schema="public", name="user_view")
-    return host, tables, users, views
+    return host, database, tables, users, views
 
 
-def test_filter_started_on_tables_folder_only_searches_tables_subtree() -> None:
-    host, tables, users, views = build_host()
-    host.object_tree.cursor_node = tables
+def test_tree_filter_from_database_still_searches_the_whole_explorer() -> None:
+    host, database, tables, users, views = build_host()
+    host.object_tree.cursor_node = database
 
     host.action_tree_filter()
+    host._tree_filter_text = "us"
+    host._update_tree_filter()
+
+    assert host._tree_filter_scope_path is None
+    assert host._tree_filter_matches == [users, views.children[0]]
+    assert tables.parent is database
+    assert views.parent is database
+    assert host.tree_filter_input.last_filter == ("us", 2, 6)
+
+
+def test_table_filter_from_database_only_searches_tables_subtree() -> None:
+    host, database, tables, users, views = build_host()
+    host.object_tree.cursor_node = database
+
+    host.action_table_filter()
     host._tree_filter_text = "us"
     host._update_tree_filter()
 
@@ -122,11 +141,14 @@ def test_filter_started_on_tables_folder_only_searches_tables_subtree() -> None:
     assert host.tree_filter_input.last_filter == ("us", 1, 2)
 
 
-def test_filter_started_on_table_uses_ancestor_tables_folder_as_scope() -> None:
-    host, tables, users, _views = build_host()
-    host.object_tree.cursor_node = users
+def test_table_filter_accept_moves_cursor_to_matched_table() -> None:
+    host, database, _tables, users, _views = build_host()
+    host.object_tree.cursor_node = database
+    host.action_table_filter()
+    host._tree_filter_text = "us"
+    host._update_tree_filter()
 
-    host.action_tree_filter()
+    host.action_tree_filter_accept()
 
-    assert host._get_tree_filter_search_root() is tables
-    assert host._tree_filter_scope_path == "db:main/folder:tables"
+    assert host.object_tree.cursor_node is users
+    assert host.activated_node is users

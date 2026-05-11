@@ -58,7 +58,7 @@ class TestQueryExecutingState:
         sm = UIStateMachine()
         ctx = make_context(query_executing=True)
 
-        left, right = sm.get_display_bindings(ctx)
+        left, _right = sm.get_display_bindings(ctx)
         actions = [b.action for b in left]
         assert "cancel_operation" in actions
 
@@ -86,6 +86,24 @@ class TestStateMachineActionValidation:
             tree_node_connection_name="test-conn",
         )
         assert sm.check_action(ctx, "edit_connection") is True
+
+    def test_table_filter_only_allowed_on_database_node(self):
+        """table_filter should only be allowed when tree is on a database."""
+        sm = UIStateMachine()
+
+        ctx = make_context(focus="explorer", tree_node_kind="database")
+        assert sm.check_action(ctx, "table_filter") is True
+
+        ctx = make_context(focus="explorer", tree_node_kind="table")
+        assert sm.check_action(ctx, "table_filter") is False
+
+    def test_database_footer_shows_table_filter(self):
+        """Database footer should expose the table filter shortcut."""
+        sm = UIStateMachine()
+        ctx = make_context(focus="explorer", tree_node_kind="database")
+
+        left, _ = sm.get_display_bindings(ctx)
+        assert "table_filter" in [binding.action for binding in left]
 
     def test_visual_mode_allowed_on_connection_node(self):
         """enter_tree_visual_mode should only be allowed on connection nodes."""

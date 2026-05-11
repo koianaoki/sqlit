@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any, cast
 
 from sqlit.shared.core.debug_events import emit_debug_event
 
@@ -328,6 +329,7 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("k", "tree_cursor_up", "tree"),
             ActionKeyDef("up", "tree_cursor_up", "tree", primary=False),
             ActionKeyDef("slash", "tree_filter", "tree"),
+            ActionKeyDef("t", "table_filter", "tree"),
             ActionKeyDef("escape", "tree_filter_close", "tree_filter"),
             ActionKeyDef("enter", "tree_filter_accept", "tree_filter"),
             # Global
@@ -502,8 +504,9 @@ def reset_keymap() -> None:
 def emit_keybinding_snapshot(provider: KeymapProvider | None = None) -> None:
     """Emit debug events for the current keymap bindings."""
     keymap = provider or get_keymap()
-    if hasattr(keymap, "_ensure_leader_commands"):
-        commands = keymap._ensure_leader_commands()  # type: ignore[attr-defined]
+    ensure_leader_commands = getattr(keymap, "_ensure_leader_commands", None)
+    if callable(ensure_leader_commands):
+        commands = ensure_leader_commands()
     else:
         commands = keymap.get_leader_commands()
     for cmd in commands:
@@ -522,11 +525,12 @@ def emit_keybinding_snapshot(provider: KeymapProvider | None = None) -> None:
         )
     if hasattr(keymap, "_leader_emitted"):
         try:
-            keymap._leader_emitted = True  # type: ignore[attr-defined]
+            cast(Any, keymap)._leader_emitted = True
         except Exception:
             pass
-    if hasattr(keymap, "_ensure_action_keys"):
-        bindings = keymap._ensure_action_keys()  # type: ignore[attr-defined]
+    ensure_action_keys = getattr(keymap, "_ensure_action_keys", None)
+    if callable(ensure_action_keys):
+        bindings = ensure_action_keys()
     else:
         bindings = keymap.get_action_keys()
     for binding in bindings:
@@ -546,6 +550,6 @@ def emit_keybinding_snapshot(provider: KeymapProvider | None = None) -> None:
         )
     if hasattr(keymap, "_action_emitted"):
         try:
-            keymap._action_emitted = True  # type: ignore[attr-defined]
+            cast(Any, keymap)._action_emitted = True
         except Exception:
             pass
