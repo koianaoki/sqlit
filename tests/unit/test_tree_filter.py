@@ -12,14 +12,17 @@ class FakeNode:
     def __init__(self, label: str, data: Any | None = None) -> None:
         self.label = label
         self.data = data
+        self._line = -1
         self.children: list[FakeNode] = []
         self.parent: FakeNode | None = None
         self.is_expanded = False
         self.allow_expand = False
+        self._tree: FakeTree | None = None
 
     def add(self, label: str, data: Any | None = None) -> FakeNode:
         child = FakeNode(label, data)
         child.parent = self
+        child._tree = self._tree
         self.children.append(child)
         return child
 
@@ -28,11 +31,27 @@ class FakeNode:
 
     def remove(self) -> None:
         if self.parent is not None:
+            root = self
+            while root.parent is not None:
+                root = root.parent
             self.parent.children.remove(self)
             self.parent = None
+            if root._tree is not None:
+                root._tree.invalidate()
+            else:
+                root._reset_lines()
 
     def expand(self) -> None:
         self.is_expanded = True
+        if self._tree is not None:
+            self._tree.invalidate()
+        else:
+            self._reset_lines()
+
+    def _reset_lines(self) -> None:
+        self._line = -1
+        for child in self.children:
+            child._reset_lines()
 
     def set_label(self, label: str) -> None:
         self.label = label
@@ -44,6 +63,17 @@ class FakeTree:
         self.has_focus = True
         self.selected_node: FakeNode | None = None
         self.cursor_node: FakeNode | None = None
+        self._lines_cached: list[FakeNode] | None = None
+        self._install_tree(root)
+
+    def _install_tree(self, node: FakeNode) -> None:
+        node._tree = self
+        for child in node.children:
+            self._install_tree(child)
+
+    def invalidate(self) -> None:
+        self._lines_cached = None
+        self.root._reset_lines()
 
     def focus(self) -> None:
         self.has_focus = True
@@ -51,8 +81,28 @@ class FakeTree:
     def select_node(self, node: FakeNode) -> None:
         self.selected_node = node
 
+    @property
+    def _tree_lines(self) -> list[FakeNode]:
+        if self._lines_cached is None:
+            nodes: list[FakeNode] = []
+
+            def walk(node: FakeNode) -> None:
+                for child in node.children:
+                    child._line = len(nodes)
+                    nodes.append(child)
+                    if child.is_expanded:
+                        walk(child)
+
+            walk(self.root)
+            self._lines_cached = nodes
+        return self._lines_cached
+
     def move_cursor(self, node: FakeNode) -> None:
-        self.cursor_node = node
+        lines = self._lines_cached or []
+        if node._line < 0 or node._line >= len(lines):
+            self.cursor_node = lines[0] if lines else None
+            return
+        self.cursor_node = lines[node._line]
 
 
 class FakeFilterInput:

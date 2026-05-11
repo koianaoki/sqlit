@@ -122,8 +122,12 @@ class TreeFilterMixin:
         if not self._tree_filter_matches:
             return
         node = self._tree_filter_matches[self._tree_filter_match_index]
-        # Expand ancestors to make node visible
+        # Expand ancestors to make node visible. Textual invalidates tree line
+        # metadata when nodes are expanded/removed; rebuild it before moving the
+        # cursor so node._line points at the filtered match instead of the old
+        # line (often the database node).
         self._expand_ancestors(node)
+        TreeFilterMixin._rebuild_tree_line_cache(self.object_tree)
         # Move the cursor as well as the selection so context-sensitive
         # bindings (which read cursor_node) match the filtered item.
         move_cursor = getattr(self.object_tree, "move_cursor", None)
@@ -131,6 +135,16 @@ class TreeFilterMixin:
             move_cursor(node)
         self.object_tree.select_node(node)
         self._update_footer_bindings()
+
+    @staticmethod
+    def _rebuild_tree_line_cache(object_tree: Any) -> None:
+        """Synchronize Textual tree line metadata after filter mutations."""
+        try:
+            # Textual builds _tree_lines lazily and assigns each node's _line.
+            # Accessing it after mutations keeps move_cursor(node) accurate.
+            getattr(object_tree, "_tree_lines")
+        except Exception:
+            pass
 
     def _expand_ancestors(self: TreeFilterMixinHost, node: Any) -> None:
         """Expand all ancestor nodes to make a node visible."""
