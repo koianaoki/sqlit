@@ -381,8 +381,20 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         self.query_input.text = query_text
         self.notify(f"{message_prefix}: {table_name} ({len(rows)})")
 
-    def _fetch_cursor_result(self: TreeMixinHost, query: str) -> tuple[list[str], list[tuple[Any, ...]]]:
-        """Execute a metadata query and return cursor columns/rows."""
+    def _fetch_cursor_result(
+        self: TreeMixinHost,
+        query: str,
+        database: str | None = None,
+    ) -> tuple[list[str], list[tuple[Any, ...]]]:
+        """Execute a metadata query and return cursor columns/rows.
+
+        Prefer the schema service so raw connection access stays serialized through
+        the session executor, matching other explorer metadata operations.
+        """
+        schema_service = self._get_schema_service()
+        if schema_service is not None and hasattr(schema_service, "execute_cursor_query"):
+            return schema_service.execute_cursor_query(query, database)
+
         if self.current_connection is None:
             raise RuntimeError("No active database connection")
         cursor = self.current_connection.cursor()
@@ -454,7 +466,7 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         table_ref = self._format_mysql_table_reference(data.database, data.name)
         query = f"SHOW FULL COLUMNS FROM {table_ref}"
         try:
-            result_columns, rows = self._fetch_cursor_result(query)
+            result_columns, rows = self._fetch_cursor_result(query, data.database)
         except Exception as error:
             self.notify(f"Error getting table columns: {error}", severity="error")
             return True
@@ -527,7 +539,7 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         table_ref = self._format_mysql_table_reference(data.database, data.name)
         query = f"SHOW INDEX FROM {table_ref}"
         try:
-            result_columns, rows = self._fetch_cursor_result(query)
+            result_columns, rows = self._fetch_cursor_result(query, data.database)
         except Exception as error:
             self.notify(f"Error getting table indexes: {error}", severity="error")
             return True

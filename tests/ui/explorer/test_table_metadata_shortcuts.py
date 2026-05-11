@@ -96,35 +96,25 @@ class TestTableMetadataShortcuts:
         assert mixin._last_result_row_count == 1
         assert mixin.query_input.text == "-- Indexes for users"
 
-
-    def test_show_table_columns_uses_mysql_full_columns(self):
+    def test_show_table_columns_uses_serialized_mysql_full_columns(self):
         mixin = self._create_mixin()
         mixin.current_provider.metadata.db_type = "mysql"
         mixin.current_provider.dialect.quote_identifier.side_effect = lambda name: f"`{name}`"
-        cursor = MagicMock()
-        cursor.description = [
-            ("Field",),
-            ("Type",),
-            ("Collation",),
-            ("Null",),
-            ("Key",),
-            ("Default",),
-            ("Extra",),
-            ("Privileges",),
-            ("Comment",),
-        ]
-        cursor.fetchall.return_value = [
-            ("id", "int", None, "NO", "PRI", None, "auto_increment", "select,insert", ""),
-            ("email", "varchar(255)", "utf8mb4_0900_ai_ci", "YES", "UNI", None, "", "select,insert", "login email"),
-        ]
         mixin.current_connection = MagicMock()
-        mixin.current_connection.cursor.return_value = cursor
-        mixin._get_schema_service = MagicMock()
+        schema_service = MagicMock()
+        schema_service.execute_cursor_query.return_value = (
+            ["Field", "Type", "Collation", "Null", "Key", "Default", "Extra", "Privileges", "Comment"],
+            [
+                ("id", "int", None, "NO", "PRI", None, "auto_increment", "select,insert", ""),
+                ("email", "varchar(255)", "utf8mb4_0900_ai_ci", "YES", "UNI", None, "", "select,insert", "login email"),
+            ],
+        )
+        mixin._get_schema_service = MagicMock(return_value=schema_service)
 
         mixin.action_show_table_columns()
 
-        cursor.execute.assert_called_once_with("SHOW FULL COLUMNS FROM `app_db`.`users`")
-        mixin._get_schema_service.assert_not_called()
+        schema_service.execute_cursor_query.assert_called_once_with("SHOW FULL COLUMNS FROM `app_db`.`users`", "app_db")
+        mixin.current_connection.cursor.assert_not_called()
         mixin._replace_results_table.assert_called_once_with(
             ["Field", "Type", "Collation", "Null", "Key", "Default", "Extra", "Privileges", "Comment"],
             [
@@ -134,31 +124,41 @@ class TestTableMetadataShortcuts:
         )
         assert mixin.query_input.text == "SHOW FULL COLUMNS FROM `app_db`.`users`"
 
-    def test_show_table_indexes_uses_mysql_show_index(self):
+    def test_show_table_columns_reports_mysql_show_error_after_serialized_retry(self):
         mixin = self._create_mixin()
         mixin.current_provider.metadata.db_type = "mysql"
         mixin.current_provider.dialect.quote_identifier.side_effect = lambda name: f"`{name}`"
-        cursor = MagicMock()
-        cursor.description = [
-            ("Table",),
-            ("Non_unique",),
-            ("Key_name",),
-            ("Seq_in_index",),
-            ("Column_name",),
-            ("Index_type",),
-        ]
-        cursor.fetchall.return_value = [
-            ("users", 0, "PRIMARY", 1, "id", "BTREE"),
-            ("users", 1, "idx_users_email", 1, "email", "BTREE"),
-        ]
         mixin.current_connection = MagicMock()
-        mixin.current_connection.cursor.return_value = cursor
-        mixin._get_schema_service = MagicMock()
+        schema_service = MagicMock()
+        schema_service.execute_cursor_query.side_effect = RuntimeError((0, ""))
+        mixin._get_schema_service = MagicMock(return_value=schema_service)
+
+        mixin.action_show_table_columns()
+
+        schema_service.execute_cursor_query.assert_called_once_with("SHOW FULL COLUMNS FROM `app_db`.`users`", "app_db")
+        mixin.current_connection.cursor.assert_not_called()
+        mixin.notify.assert_called_once_with("Error getting table columns: (0, '')", severity="error")
+        mixin._replace_results_table.assert_not_called()
+
+    def test_show_table_indexes_uses_serialized_mysql_show_index(self):
+        mixin = self._create_mixin()
+        mixin.current_provider.metadata.db_type = "mysql"
+        mixin.current_provider.dialect.quote_identifier.side_effect = lambda name: f"`{name}`"
+        mixin.current_connection = MagicMock()
+        schema_service = MagicMock()
+        schema_service.execute_cursor_query.return_value = (
+            ["Table", "Non_unique", "Key_name", "Seq_in_index", "Column_name", "Index_type"],
+            [
+                ("users", 0, "PRIMARY", 1, "id", "BTREE"),
+                ("users", 1, "idx_users_email", 1, "email", "BTREE"),
+            ],
+        )
+        mixin._get_schema_service = MagicMock(return_value=schema_service)
 
         mixin.action_show_table_indexes()
 
-        cursor.execute.assert_called_once_with("SHOW INDEX FROM `app_db`.`users`")
-        mixin._get_schema_service.assert_not_called()
+        schema_service.execute_cursor_query.assert_called_once_with("SHOW INDEX FROM `app_db`.`users`", "app_db")
+        mixin.current_connection.cursor.assert_not_called()
         mixin._replace_results_table.assert_called_once_with(
             ["Table", "Non_unique", "Key_name", "Seq_in_index", "Column_name", "Index_type"],
             [
@@ -167,6 +167,22 @@ class TestTableMetadataShortcuts:
             ],
         )
         assert mixin.query_input.text == "SHOW INDEX FROM `app_db`.`users`"
+
+    def test_show_table_indexes_reports_mysql_show_error_after_serialized_retry(self):
+        mixin = self._create_mixin()
+        mixin.current_provider.metadata.db_type = "mysql"
+        mixin.current_provider.dialect.quote_identifier.side_effect = lambda name: f"`{name}`"
+        mixin.current_connection = MagicMock()
+        schema_service = MagicMock()
+        schema_service.execute_cursor_query.side_effect = RuntimeError((0, ""))
+        mixin._get_schema_service = MagicMock(return_value=schema_service)
+
+        mixin.action_show_table_indexes()
+
+        schema_service.execute_cursor_query.assert_called_once_with("SHOW INDEX FROM `app_db`.`users`", "app_db")
+        mixin.current_connection.cursor.assert_not_called()
+        mixin.notify.assert_called_once_with("Error getting table indexes: (0, '')", severity="error")
+        mixin._replace_results_table.assert_not_called()
 
     def test_show_table_indexes_matches_table_case_insensitively(self):
         mixin = self._create_mixin()
