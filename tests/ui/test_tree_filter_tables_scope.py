@@ -234,6 +234,29 @@ def test_table_filter_from_table_uses_ancestor_tables_subtree() -> None:
     assert views.parent is None
 
 
+def test_table_filter_does_not_fall_back_to_root_when_scope_is_missing() -> None:
+    host, _database, tables, _users, _views = build_host()
+    info_schema = host.object_tree.root.add("information_schema")
+    info_schema.data = DatabaseNode(name="information_schema")
+    info_tables = info_schema.add("Tables")
+    info_tables.data = FolderNode(folder_type="tables", database="information_schema")
+    routines = info_tables.add("ROUTINES")
+    routines.data = TableNode(database="information_schema", schema="", name="ROUTINES")
+
+    host._tree_filter_visible = True
+    host._tree_filter_scope_path = "db:main/folder:tables"
+    host._tree_filter_scope_node = None
+    tables.remove()
+    host._tree_filter_text = "routine"
+
+    host._update_tree_filter()
+
+    assert host._tree_filter_matches == []
+    assert host.object_tree.cursor_node is None
+    assert routines.parent is info_tables
+    assert host.tree_filter_input.last_filter == ("routine", 0, 0)
+
+
 def test_table_filter_accept_moves_cursor_to_matched_table() -> None:
     host, database, _tables, users, _views = build_host()
     host.object_tree.cursor_node = database
