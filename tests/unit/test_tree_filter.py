@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlit.domains.explorer.domain.tree_nodes import FolderNode, LoadingNode, TableNode
+from sqlit.domains.explorer.domain.tree_nodes import DatabaseNode, FolderNode, LoadingNode, TableNode
 from sqlit.domains.explorer.ui.mixins.tree_filter import TreeFilterMixin
 
 
@@ -43,12 +43,16 @@ class FakeTree:
         self.root = root
         self.has_focus = True
         self.selected_node: FakeNode | None = None
+        self.cursor_node: FakeNode | None = None
 
     def focus(self) -> None:
         self.has_focus = True
 
     def select_node(self, node: FakeNode) -> None:
         self.selected_node = node
+
+    def move_cursor(self, node: FakeNode) -> None:
+        self.cursor_node = node
 
 
 class FakeFilterInput:
@@ -139,6 +143,24 @@ def test_tree_filter_matches_tables_under_non_matching_folder_label() -> None:
     assert tables in root.children
     assert tables.children == [orders]
     assert host.object_tree.selected_node is orders
+    assert host.object_tree.cursor_node is orders
+
+
+def test_tree_filter_moves_cursor_from_database_to_matching_table() -> None:
+    root = FakeNode("root")
+    database = root.add("app_db", DatabaseNode(name="app_db"))
+    tables = database.add("Tables", FolderNode(folder_type="tables", database="app_db"))
+    orders = tables.add("orders", TableNode(database="app_db", schema="main", name="orders"))
+    tables.add("customers", TableNode(database="app_db", schema="main", name="customers"))
+    host = FakeTreeFilterHost(root)
+    host.object_tree.cursor_node = database
+    host._tree_filter_text = "orders"
+
+    host._update_tree_filter()
+
+    assert host._tree_filter_matches == [orders]
+    assert host.object_tree.selected_node is orders
+    assert host.object_tree.cursor_node is orders
 
 
 def test_tree_filter_regex_matches_table_labels() -> None:

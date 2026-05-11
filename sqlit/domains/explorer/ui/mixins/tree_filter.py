@@ -124,8 +124,13 @@ class TreeFilterMixin:
         node = self._tree_filter_matches[self._tree_filter_match_index]
         # Expand ancestors to make node visible
         self._expand_ancestors(node)
-        # Select the node
+        # Move the cursor as well as the selection so context-sensitive
+        # bindings (which read cursor_node) match the filtered item.
+        move_cursor = getattr(self.object_tree, "move_cursor", None)
+        if callable(move_cursor):
+            move_cursor(node)
         self.object_tree.select_node(node)
+        self._update_footer_bindings()
 
     def _expand_ancestors(self: TreeFilterMixinHost, node: Any) -> None:
         """Expand all ancestor nodes to make a node visible."""
