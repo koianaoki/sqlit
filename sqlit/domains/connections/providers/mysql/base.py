@@ -37,7 +37,7 @@ class MySQLBaseAdapter(CursorBasedAdapter):
     def supports_stored_procedures(self) -> bool:
         return True
 
-    def apply_database_override(self, config: "ConnectionConfig", database: str) -> "ConnectionConfig":
+    def apply_database_override(self, config: ConnectionConfig, database: str) -> ConnectionConfig:
         """Apply a default database for unqualified queries."""
         if not database:
             return config
@@ -155,7 +155,7 @@ class MySQLBaseAdapter(CursorBasedAdapter):
             cursor.execute(
                 "SELECT DISTINCT index_name, table_name, non_unique "
                 "FROM information_schema.statistics "
-                "WHERE table_schema = %s AND index_name != 'PRIMARY' "
+                "WHERE table_schema = %s "
                 "ORDER BY table_name, index_name",
                 (database,),
             )
@@ -163,7 +163,7 @@ class MySQLBaseAdapter(CursorBasedAdapter):
             cursor.execute(
                 "SELECT DISTINCT index_name, table_name, non_unique "
                 "FROM information_schema.statistics "
-                "WHERE table_schema = DATABASE() AND index_name != 'PRIMARY' "
+                "WHERE table_schema = DATABASE() "
                 "ORDER BY table_name, index_name"
             )
         return [
