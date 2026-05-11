@@ -106,6 +106,10 @@ class TreeFilterMixin:
 
     def action_tree_filter_close(self: TreeFilterMixinHost) -> None:
         """Close the tree filter and restore tree."""
+        self._close_tree_filter_state(restore_tree=True)
+
+    def _close_tree_filter_state(self: TreeFilterMixinHost, *, restore_tree: bool) -> None:
+        """Close filter UI, optionally rebuilding the tree to show all nodes."""
         self._tree_filter_visible = False
         self._tree_filter_text = ""
         self._tree_filter_query = ""
@@ -117,14 +121,13 @@ class TreeFilterMixin:
         self._tree_filter_scope_path = None
         self.tree_filter_input.hide()
         self._restore_tree_labels()
-        self._show_all_tree_nodes()
+        if restore_tree:
+            self._show_all_tree_nodes()
         self._tree_filter_applied = False
         self._update_footer_bindings()
 
     def action_tree_filter_accept(self: TreeFilterMixinHost) -> None:
         """Accept current filter selection, close filter, and activate the node."""
-        # Store current match before closing. The tree is rebuilt on close,
-        # so keep a stable path and restore the cursor to the rebuilt node.
         current_node = None
         current_path = ""
         if self._tree_filter_matches and self._tree_filter_match_index < len(self._tree_filter_matches):
@@ -133,13 +136,18 @@ class TreeFilterMixin:
             self._remember_tree_filter_path(current_path)
             self._move_tree_cursor_to_node(current_node)
 
-        # Close the filter
-        self.action_tree_filter_close()
+        is_table_filter = bool(getattr(self, "_tree_filter_scope_path", None))
 
-        if current_path:
-            restored_node = self._restore_tree_filter_cursor_path(current_path)
-            if restored_node is not None:
-                current_node = restored_node
+        if is_table_filter:
+            # Table Filter is an in-place narrowing action: keep the Tables subtree
+            # open/filtered and leave the cursor on the chosen table.
+            self._close_tree_filter_state(restore_tree=False)
+        else:
+            self.action_tree_filter_close()
+            if current_path:
+                restored_node = self._restore_tree_filter_cursor_path(current_path)
+                if restored_node is not None:
+                    current_node = restored_node
 
         # Activate the selected node (connect to server, expand folder, etc.)
         if current_node and current_node.data:
@@ -211,10 +219,7 @@ class TreeFilterMixin:
         if not self._tree_filter_matches:
             return
         node = self._tree_filter_matches[self._tree_filter_match_index]
-        # Expand ancestors to make node visible
-        self._expand_ancestors(node)
-        # Select the node
-        self.object_tree.select_node(node)
+        self._move_tree_cursor_to_node(node)
 
     def _expand_ancestors(self: TreeFilterMixinHost, node: Any) -> None:
         """Expand all ancestor nodes to make a node visible."""
@@ -422,6 +427,12 @@ class TreeFilterMixin:
             indices.update(range(start, end))
         return matched, sorted(indices)
 
+    def _tree_filter_can_match_node(self: TreeFilterMixinHost, node: Any) -> bool:
+        """Return whether a node should be a selectable filter result."""
+        if getattr(self, "_tree_filter_scope_path", None):
+            return self._get_node_kind(node) == "table"
+        return True
+
     def _find_matching_nodes(
         self: TreeFilterMixinHost, node: Any, matches: list, include_self: bool = True
     ) -> bool:
@@ -439,7 +450,7 @@ class TreeFilterMixin:
 
         # Get node label text for matching
         label_text = self._get_node_label_text(node)
-        if include_self and label_text:
+        if include_self and label_text and self._tree_filter_can_match_node(node):
             if self._tree_filter_fuzzy:
                 matched, indices = fuzzy_match(self._tree_filter_query, label_text)
             elif self._tree_filter_regex_mode:

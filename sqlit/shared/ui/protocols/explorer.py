@@ -57,6 +57,9 @@ class ExplorerActionsProtocol(Protocol):
     def action_table_filter(self) -> None:
         ...
 
+    def _close_tree_filter_state(self, *, restore_tree: bool) -> None:
+        ...
+
     def action_tree_filter_accept(self) -> None:
         ...
 
@@ -115,6 +118,9 @@ class ExplorerActionsProtocol(Protocol):
         ...
 
     def _tree_filter_node_has_pending_load(self, node: Any) -> bool:
+        ...
+
+    def _tree_filter_can_match_node(self, node: Any) -> bool:
         ...
 
     def _find_matching_nodes(self, node: Any, matches: list[Any], include_self: bool = True) -> bool:

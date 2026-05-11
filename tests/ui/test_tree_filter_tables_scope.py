@@ -195,6 +195,8 @@ def test_table_filter_accept_moves_cursor_to_matched_table() -> None:
     assert host._pending_tree_cursor_path == "db:main/folder:tables/table:public.users"
     assert "db:main" in host._expanded_paths
     assert "db:main/folder:tables" in host._expanded_paths
+    assert host.refreshed is False
+    assert host._tree_filter_visible is False
 
 
 def test_table_filter_cursor_restore_retries_until_table_is_reloaded() -> None:
