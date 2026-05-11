@@ -67,6 +67,28 @@ class ExplorerSchemaService:
                 raise
         return self._run(fn)
 
+    def execute_cursor_query(
+        self,
+        query: str,
+        database: str | None = None,
+    ) -> tuple[list[str], list[tuple[Any, ...]]]:
+        """Execute a cursor-returning metadata query on the serialized DB executor."""
+
+        def fetch() -> tuple[list[str], list[tuple[Any, ...]]]:
+            cursor = self.session.connection.cursor()
+            try:
+                cursor.execute(query)
+                description = cursor.description or []
+                result_columns = [column[0] for column in description]
+                rows = [tuple(row) for row in cursor.fetchall()]
+                return result_columns, rows
+            finally:
+                close = getattr(cursor, "close", None)
+                if callable(close):
+                    close()
+
+        return self._run_with_retry(fetch, database)
+
     def list_databases(self) -> list[str]:
         inspector = self.session.provider.schema_inspector
         return self._run_with_retry(
