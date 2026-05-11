@@ -24,12 +24,12 @@ class MockTreeNode:
         self.allow_expand = False
         self.is_expanded = False
 
-    def add(self, label: str) -> "MockTreeNode":
+    def add(self, label: str) -> MockTreeNode:
         child = MockTreeNode(label, parent=self)
         self.children.append(child)
         return child
 
-    def add_leaf(self, label: str) -> "MockTreeNode":
+    def add_leaf(self, label: str) -> MockTreeNode:
         return self.add(label)
 
     def set_label(self, label: str) -> None:
@@ -354,6 +354,7 @@ class TestSingleDatabaseMode:
 
         # Should NOT have a Databases folder - should show database objects directly
         databases_folder = _find_databases_folder(host.object_tree.root)
+        assert databases_folder is None
 
         # In single-db mode, we don't show "Databases" folder
         # Instead we show Tables, Views, etc. directly under connection
@@ -367,3 +368,44 @@ class TestSingleDatabaseMode:
         assert connection_node is not None
         # When database is specified, populate_connected_tree calls add_database_object_nodes
         # directly instead of adding a Databases folder
+
+
+def test_database_folder_load_restores_expanded_database_and_pending_cursor():
+    """Loading databases should reopen expanded DB children and restore pending cursor."""
+    from sqlit.domains.connections.providers.explorer_nodes import ExplorerFolderSpec
+    from sqlit.domains.explorer.ui.tree import loaders as tree_loaders
+
+    class TablesExplorerNodes:
+        def get_root_folders(self, caps):
+            return [ExplorerFolderSpec("tables", "Tables", lambda _caps: True)]
+
+    host = MockHost(multi_db=True, connection_database="")
+    host.current_provider.explorer_nodes = TablesExplorerNodes()
+    host._session.provider = host.current_provider
+
+    databases_folder = host.object_tree.root.add("Databases")
+    databases_folder.data = FolderNode(folder_type="databases")
+    host._expanded_paths = {
+        "folder:databases/db:norway_culture",
+        "folder:databases/db:norway_culture/folder:tables",
+    }
+    host._pending_tree_cursor_path = "folder:databases/db:norway_culture/folder:tables"
+    host._pending_tree_cursor_connection = ""
+    host._load_folder_async = lambda _node, _data: None
+
+    tree_tree = host.object_tree
+    tree_tree.move_cursor = lambda node: setattr(tree_tree, "cursor_node", node)
+
+    tree_loaders.on_folder_loaded(
+        host,
+        databases_folder,
+        None,
+        "databases",
+        ["norway_culture", "norway_geography"],
+    )
+
+    norway = databases_folder.children[0]
+    tables = norway.children[0]
+    assert norway.is_expanded is True
+    assert tables.is_expanded is True
+    assert host.object_tree.cursor_node is tables

@@ -116,7 +116,7 @@ def load_columns_async(host: TreeMixinHost, node: Any, data: TableNode | ViewNod
         import asyncio
 
         try:
-            columns = []
+            columns: list[Any] = []
             runtime = getattr(host.services, "runtime", None)
             use_worker = bool(getattr(runtime, "process_worker", False)) and not bool(
                 getattr(getattr(runtime, "mock", None), "enabled", False)
@@ -130,7 +130,7 @@ def load_columns_async(host: TreeMixinHost, node: Any, data: TableNode | ViewNod
                     provider = getattr(host, "current_provider", None)
                     use_worker = supports_process_worker(provider)
             if use_worker and hasattr(host, "_get_process_worker_client_async"):
-                client = await host._get_process_worker_client_async()  # type: ignore[attr-defined]
+                client = await host._get_process_worker_client_async()
             else:
                 client = None
 
@@ -234,7 +234,7 @@ def load_folder_async(host: TreeMixinHost, node: Any, data: FolderNode) -> None:
                     use_worker = supports_process_worker(provider)
             client = None
             if use_worker and hasattr(host, "_get_process_worker_client_async"):
-                client = await host._get_process_worker_client_async()  # type: ignore[attr-defined]
+                client = await host._get_process_worker_client_async()
 
             if client is not None and hasattr(client, "list_folder_items") and host.current_config is not None:
                 outcome = await asyncio.to_thread(
@@ -303,6 +303,11 @@ def on_folder_loaded(
             db_node.allow_expand = True
             tree_builder.add_database_object_nodes(host, db_node, str(db))
 
+        expansion_state.restore_subtree_expansion_with_paths(
+            host, node, getattr(host, "_expanded_paths", set())
+        )
+        ensure_expanded_nodes_loaded(host, node)
+        tree_builder.restore_pending_cursor(host)
         refresh_tree_filter_if_active(host)
         return
 
