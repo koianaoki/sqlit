@@ -187,3 +187,29 @@ def test_tree_filter_invalid_regex_does_not_raise() -> None:
     assert host._tree_filter_regex_error
     assert host._tree_filter_matches == []
     assert host.tree_filter_input.last_filter == (r"/(orders", 0, 2)
+
+
+def test_tree_filter_opened_by_slash_keeps_slash_visible() -> None:
+    root = FakeNode("root")
+    root.add("Tables", FolderNode(folder_type="tables"))
+    host = FakeTreeFilterHost(root)
+    host._last_key = "slash"
+    host._last_key_char = "/"
+
+    host.action_tree_filter()
+
+    assert host._tree_filter_text == "/"
+    assert host._tree_filter_regex_mode is True
+    assert host.tree_filter_input.last_filter == ("/", 0, 1)
+
+
+def test_tree_filter_empty_regex_prefix_remains_visible() -> None:
+    root = FakeNode("root")
+    root.add("Tables", FolderNode(folder_type="tables"))
+    host = FakeTreeFilterHost(root)
+    host._tree_filter_text = "/"
+
+    host._update_tree_filter()
+
+    assert host._tree_filter_regex_mode is True
+    assert host.tree_filter_input.last_filter == ("/", 0, 1)
