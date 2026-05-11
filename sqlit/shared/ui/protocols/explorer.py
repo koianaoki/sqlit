@@ -22,6 +22,8 @@ class ExplorerStateProtocol(Protocol):
     _tree_filter_match_index: int
     _tree_original_labels: dict[int, str]
     _tree_filter_applied: bool
+    _tree_filter_scope_path: str | None
+    _TREE_FILTER_LOADABLE_FOLDERS: set[str]
 
 
 class ExplorerActionsProtocol(Protocol):
@@ -76,10 +78,34 @@ class ExplorerActionsProtocol(Protocol):
     def _show_all_tree_nodes(self) -> None:
         ...
 
-    def _count_all_nodes(self) -> int:
+    def _count_all_nodes(self, root: Any | None = None) -> int:
         ...
 
-    def _find_matching_nodes(self, node: Any, matches: list[Any]) -> bool:
+    def _get_tree_filter_scope_path(self) -> str | None:
+        ...
+
+    def _get_tree_filter_search_root(self) -> Any:
+        ...
+
+    def _extract_tree_filter_regex_query(self, raw_text: str) -> str | None:
+        ...
+
+    def _match_tree_filter_regex(self, label_text: str) -> tuple[bool, list[int]]:
+        ...
+
+    def _ensure_tree_filter_search_nodes_loaded(self) -> bool:
+        ...
+
+    def _tree_filter_should_load_node(self, node: Any) -> bool:
+        ...
+
+    def _start_tree_filter_node_load(self, node: Any) -> bool:
+        ...
+
+    def _tree_filter_node_has_pending_load(self, node: Any) -> bool:
+        ...
+
+    def _find_matching_nodes(self, node: Any, matches: list[Any], include_self: bool = True) -> bool:
         ...
 
     def _get_node_label_text(self, node: Any) -> str:

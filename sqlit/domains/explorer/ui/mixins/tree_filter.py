@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from rich.markup import escape as escape_markup
 
@@ -31,6 +31,7 @@ class TreeFilterMixin:
     _tree_filter_match_index: int = 0
     _tree_original_labels: dict[int, str] = {}
     _tree_filter_applied: bool = False
+    _tree_filter_scope_path: str | None = None
 
     _TREE_FILTER_LOADABLE_FOLDERS = {
         "databases",
@@ -59,6 +60,7 @@ class TreeFilterMixin:
         self._tree_filter_match_index = 0
         self._tree_original_labels = {}
         self._tree_filter_applied = False
+        self._tree_filter_scope_path = self._get_tree_filter_scope_path()
 
         self.tree_filter_input.show()
         self._ensure_tree_filter_search_nodes_loaded()
@@ -75,6 +77,7 @@ class TreeFilterMixin:
         self._tree_filter_regex = None
         self._tree_filter_regex_error = None
         self._tree_filter_typing = False
+        self._tree_filter_scope_path = None
         self.tree_filter_input.hide()
         self._restore_tree_labels()
         self._show_all_tree_nodes()
@@ -204,7 +207,8 @@ class TreeFilterMixin:
     def _update_tree_filter(self: TreeFilterMixinHost) -> None:
         """Update the tree based on current filter text."""
         self._restore_tree_labels()
-        total = self._count_all_nodes()
+        search_root = self._get_tree_filter_search_root()
+        total = self._count_all_nodes(search_root)
         raw_text = self._tree_filter_text
         self._tree_filter_fuzzy = raw_text.startswith("~")
         self._tree_filter_regex_mode = False
@@ -237,9 +241,9 @@ class TreeFilterMixin:
 
         self._ensure_tree_filter_search_nodes_loaded()
 
-        # Find all matching nodes
+        # Find all matching nodes inside the current filter scope.
         matches: list[Any] = []
-        self._find_matching_nodes(self.object_tree.root, matches)
+        self._find_matching_nodes(search_root, matches, include_self=False)
 
         self._tree_filter_matches = matches
         self._tree_filter_match_index = 0
@@ -257,6 +261,25 @@ class TreeFilterMixin:
         if matches:
             self._jump_to_current_match()
 
+    def _get_tree_filter_scope_path(self: TreeFilterMixinHost) -> str | None:
+        """Return the Tables subtree path when the cursor is inside one."""
+        node = getattr(self.object_tree, "cursor_node", None)
+        while node and node != self.object_tree.root:
+            data = getattr(node, "data", None)
+            if self._get_node_kind(node) == "folder" and getattr(data, "folder_type", "") == "tables":
+                path = expansion_state.get_node_path(cast(Any, self), node)
+                return path or None
+            node = getattr(node, "parent", None)
+        return None
+
+    def _get_tree_filter_search_root(self: TreeFilterMixinHost) -> Any:
+        """Return the subtree that should be searched by the active explorer filter."""
+        path = getattr(self, "_tree_filter_scope_path", None)
+        if path:
+            scoped_node = expansion_state.find_node_by_path(cast(Any, self), self.object_tree.root, path)
+            if scoped_node is not None:
+                return scoped_node
+        return self.object_tree.root
 
     def _extract_tree_filter_regex_query(self: TreeFilterMixinHost, raw_text: str) -> str | None:
         """Return regex pattern when the filter text uses a regex prefix."""
@@ -285,7 +308,7 @@ class TreeFilterMixin:
         return matched, sorted(indices)
 
     def _find_matching_nodes(
-        self: TreeFilterMixinHost, node: Any, matches: list
+        self: TreeFilterMixinHost, node: Any, matches: list, include_self: bool = True
     ) -> bool:
         """Recursively find nodes matching the filter.
 
@@ -301,7 +324,7 @@ class TreeFilterMixin:
 
         # Get node label text for matching
         label_text = self._get_node_label_text(node)
-        if label_text:
+        if include_self and label_text:
             if self._tree_filter_fuzzy:
                 matched, indices = fuzzy_match(self._tree_filter_query, label_text)
             elif self._tree_filter_regex_mode:
@@ -332,7 +355,7 @@ class TreeFilterMixin:
             return False
 
         started = False
-        stack = [self.object_tree.root]
+        stack = [self._get_tree_filter_search_root()]
         while stack:
             node = stack.pop()
             if self._tree_filter_should_load_node(node):
@@ -367,15 +390,15 @@ class TreeFilterMixin:
         if children:
             return False
 
-        node_path = expansion_state.get_node_path(self, node)
+        node_path = expansion_state.get_node_path(cast(Any, self), node)
         if not node_path:
             return False
-        loading_nodes = tree_loaders.ensure_loading_nodes(self)
+        loading_nodes = tree_loaders.ensure_loading_nodes(cast(Any, self))
         if node_path in loading_nodes:
             return False
 
         loading_nodes.add(node_path)
-        tree_loaders.add_loading_placeholder(self, node)
+        tree_loaders.add_loading_placeholder(cast(Any, self), node)
         self._load_folder_async(node, node.data)
         return True
 
@@ -411,6 +434,7 @@ class TreeFilterMixin:
         match_ids = {id(n) for n in self._tree_filter_matches}
         ancestor_ids = set()
         pending_ids = set()
+        scope_node = self._get_tree_filter_search_root()
 
         def collect_pending(node: Any) -> None:
             if self._tree_filter_node_has_pending_load(node):
@@ -420,7 +444,13 @@ class TreeFilterMixin:
             for child in getattr(node, "children", []):
                 collect_pending(child)
 
-        collect_pending(self.object_tree.root)
+        collect_pending(scope_node)
+
+        # Keep the scoped subtree reachable from the root while filtering.
+        current = scope_node
+        while current and current != self.object_tree.root:
+            ancestor_ids.add(id(current))
+            current = current.parent
 
         # Collect all ancestor IDs
         for node in self._tree_filter_matches:
@@ -483,8 +513,8 @@ class TreeFilterMixin:
         restore_node(self.object_tree.root)
         self._tree_original_labels = {}
 
-    def _count_all_nodes(self: TreeFilterMixinHost) -> int:
-        """Count all searchable nodes in the tree."""
+    def _count_all_nodes(self: TreeFilterMixinHost, root: Any | None = None) -> int:
+        """Count all searchable nodes in the current filter scope."""
         count = 0
 
         def count_nodes(node: Any) -> None:
@@ -494,5 +524,7 @@ class TreeFilterMixin:
             for child in node.children:
                 count_nodes(child)
 
-        count_nodes(self.object_tree.root)
+        start = root or self.object_tree.root
+        for child in getattr(start, "children", []):
+            count_nodes(child)
         return count
