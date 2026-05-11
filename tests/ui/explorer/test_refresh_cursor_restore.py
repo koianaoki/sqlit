@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from contextlib import nullcontext
+from dataclasses import dataclass
 from unittest.mock import MagicMock
 
 from sqlit.domains.connections.providers.explorer_nodes import DefaultExplorerNodeProvider
 from sqlit.domains.connections.providers.model import SchemaCapabilities
 from sqlit.domains.explorer.domain.tree_nodes import ColumnNode, ConnectionNode, FolderNode, TableNode
+from sqlit.domains.explorer.ui.mixins.tree_filter import TreeFilterMixin
 from sqlit.domains.explorer.ui.tree import builder as tree_builder
-from sqlit.domains.explorer.ui.tree import expansion_state, loaders as tree_loaders
+from sqlit.domains.explorer.ui.tree import expansion_state
+from sqlit.domains.explorer.ui.tree import loaders as tree_loaders
 
 
 @dataclass
@@ -55,8 +57,8 @@ class MockTreeNode:
         self,
         label: str = "",
         data=None,
-        parent: "MockTreeNode | None" = None,
-        tree: "MockTree | None" = None,
+        parent: MockTreeNode | None = None,
+        tree: MockTree | None = None,
     ) -> None:
         self.label = label
         self.data = data
@@ -66,12 +68,12 @@ class MockTreeNode:
         self.is_expanded = False
         self._tree = tree
 
-    def add(self, label: str) -> "MockTreeNode":
+    def add(self, label: str) -> MockTreeNode:
         child = MockTreeNode(label, parent=self, tree=self._tree)
         self.children.append(child)
         return child
 
-    def add_leaf(self, label: str) -> "MockTreeNode":
+    def add_leaf(self, label: str) -> MockTreeNode:
         return self.add(label)
 
     def set_label(self, label: str) -> None:
@@ -115,6 +117,9 @@ class MockTree:
         return nodes
 
     def move_cursor(self, node: MockTreeNode) -> None:
+        self.cursor_node = node
+
+    def select_node(self, node: MockTreeNode) -> None:
         self.cursor_node = node
 
     def _on_subtree_removed(self, node: MockTreeNode) -> None:
@@ -165,6 +170,7 @@ class MockHost:
         self.services = MagicMock()
         self.services.runtime = MagicMock()
         self.services.runtime.process_worker = False
+        self.tree_filter_input = MagicMock()
 
     def _format_connection_label(self, config, status, spinner=None) -> str:
         return config.name
@@ -230,8 +236,7 @@ def _find_node(root: MockTreeNode, predicate) -> MockTreeNode | None:
 def _find_folder(root: MockTreeNode, folder_type: str) -> MockTreeNode | None:
     return _find_node(
         root,
-        lambda node: isinstance(getattr(node, "data", None), FolderNode)
-        and node.data.folder_type == folder_type,
+        lambda node: isinstance(getattr(node, "data", None), FolderNode) and node.data.folder_type == folder_type,
     )
 
 
@@ -363,3 +368,71 @@ def test_refresh_restores_cursor_to_column_after_reload() -> None:
     column_after = _find_column(host.object_tree.root, "id")
     assert column_after is not None
     assert host.object_tree.cursor_node is column_after
+
+
+class MockFilterHost(TreeFilterMixin, MockHost):
+    def refresh_tree(self) -> None:
+        tree_builder.refresh_tree_incremental(self)
+
+    def _update_footer_bindings(self) -> None:
+        pass
+
+    def _activate_tree_node(self, node) -> None:
+        self.activated_node = node
+
+
+def test_tree_filter_accept_keeps_table_cursor_after_restoring_tree() -> None:
+    host = MockFilterHost()
+    tree_builder.refresh_tree_incremental(host)
+
+    connection = _find_node(host.object_tree.root, lambda node: isinstance(node.data, ConnectionNode))
+    assert connection is not None
+    connection.expand()
+
+    tables = _find_folder(host.object_tree.root, "tables")
+    assert tables is not None
+    tables.expand()
+    tree_loaders.on_folder_loaded(
+        host,
+        tables,
+        None,
+        "tables",
+        [("table", "public", "posts"), ("table", "public", "users")],
+    )
+
+    users = _find_table(host.object_tree.root, "users")
+    assert users is not None
+    host._tree_filter_visible = True
+    host._tree_filter_text = "users"
+    host._tree_filter_query = ""
+    host._tree_filter_fuzzy = False
+    host._tree_filter_regex_mode = False
+    host._tree_filter_regex = None
+    host._tree_filter_regex_error = None
+    host._tree_filter_typing = True
+    host._tree_filter_matches = []
+    host._tree_filter_match_index = 0
+    host._tree_original_labels = {}
+    host._tree_filter_applied = False
+
+    host._update_tree_filter()
+    assert host.object_tree.cursor_node is users
+
+    host.action_tree_filter_accept()
+
+    assert host.object_tree.cursor_node is not users
+    assert getattr(host, "_pending_tree_cursor_path", "").endswith("/folder:tables/table:public.users")
+
+    tables_after = _find_folder(host.object_tree.root, "tables")
+    assert tables_after is not None
+    tree_loaders.on_folder_loaded(
+        host,
+        tables_after,
+        None,
+        "tables",
+        [("table", "public", "posts"), ("table", "public", "users")],
+    )
+
+    assert getattr(host.object_tree.cursor_node, "data", None) is not None
+    assert host.object_tree.cursor_node.data.name == "users"
+    assert getattr(host, "_pending_tree_cursor_path", "") == ""

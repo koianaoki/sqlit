@@ -87,12 +87,7 @@ class TreeMixinHost(
     pass
 
 
-class TreeFilterMixinHost(
-    WidgetAccessProtocol,
-    ExplorerProtocol,
-    UINavigationProtocol,
-    Protocol,
-):
+class TreeFilterMixinHost(TreeMixinHost, Protocol):
     """Host protocol for tree filter mixins."""
 
     pass

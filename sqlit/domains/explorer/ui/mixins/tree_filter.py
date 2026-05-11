@@ -87,34 +87,80 @@ class TreeFilterMixin:
 
     def action_tree_filter_accept(self: TreeFilterMixinHost) -> None:
         """Accept current filter selection, close filter, and activate the node."""
-        # Store current match before closing
+        # Store current match before closing because closing the filter rebuilds the tree.
         current_node = None
+        target_path = ""
         if self._tree_filter_matches and self._tree_filter_match_index < len(self._tree_filter_matches):
             current_node = self._tree_filter_matches[self._tree_filter_match_index]
+            target_path = self._prepare_tree_filter_accept_target(current_node)
 
-        # Close the filter
+        # Close the filter. This restores the full tree and may recreate nodes.
         self.action_tree_filter_close()
 
-        # Activate the selected node (connect to server, expand folder, etc.)
-        if current_node and current_node.data:
-            self._activate_tree_node(current_node)
+        restored_node = None
+        if target_path:
+            restored_node = self._restore_tree_filter_accept_cursor(target_path)
+
+        # Activate the selected node (connect to server, expand folder, etc.). Prefer the
+        # node from the restored tree when it is already available; otherwise keep the
+        # original node so existing connection activation behavior is preserved.
+        activation_node = restored_node or current_node
+        if activation_node and activation_node.data:
+            self._activate_tree_node(activation_node)
+
+    def _prepare_tree_filter_accept_target(self: Any, node: Any) -> str:
+        """Persist enough tree state to keep the accepted filter match focused."""
+        target_path = expansion_state.get_node_path(self, node)
+        if not target_path:
+            return ""
+
+        expanded_paths = set(getattr(self, "_expanded_paths", set()))
+        current = getattr(node, "parent", None)
+        while current and current != self.object_tree.root:
+            path = expansion_state.get_node_path(self, current)
+            if path:
+                expanded_paths.add(path)
+            try:
+                current.expand()
+            except Exception:
+                pass
+            current = getattr(current, "parent", None)
+        self._expanded_paths = expanded_paths
+
+        self._pending_tree_cursor_path = target_path
+        self._pending_tree_cursor_connection = ""
+        return target_path
+
+    def _restore_tree_filter_accept_cursor(self: Any, target_path: str) -> Any | None:
+        """Move the explorer cursor to the accepted filter match when available."""
+        node = expansion_state.find_node_by_path(self, self.object_tree.root, target_path)
+        if node is None:
+            self._pending_tree_cursor_path = target_path
+            self._pending_tree_cursor_connection = ""
+            return None
+
+        self._expand_ancestors(node)
+        move_cursor = getattr(self.object_tree, "move_cursor", None)
+        if callable(move_cursor):
+            move_cursor(node)
+        else:
+            self.object_tree.select_node(node)
+        self._pending_tree_cursor_path = ""
+        self._pending_tree_cursor_connection = ""
+        return node
 
     def action_tree_filter_next(self: TreeFilterMixinHost) -> None:
         """Move to next filter match."""
         if not self._tree_filter_matches:
             return
-        self._tree_filter_match_index = (self._tree_filter_match_index + 1) % len(
-            self._tree_filter_matches
-        )
+        self._tree_filter_match_index = (self._tree_filter_match_index + 1) % len(self._tree_filter_matches)
         self._jump_to_current_match()
 
     def action_tree_filter_prev(self: TreeFilterMixinHost) -> None:
         """Move to previous filter match."""
         if not self._tree_filter_matches:
             return
-        self._tree_filter_match_index = (self._tree_filter_match_index - 1) % len(
-            self._tree_filter_matches
-        )
+        self._tree_filter_match_index = (self._tree_filter_match_index - 1) % len(self._tree_filter_matches)
         self._jump_to_current_match()
 
     def _jump_to_current_match(self: TreeFilterMixinHost) -> None:
@@ -253,14 +299,11 @@ class TreeFilterMixin:
         self._tree_filter_applied = True
 
         # Update filter display
-        self.tree_filter_input.set_filter(
-            self._tree_filter_text, len(matches), total
-        )
+        self.tree_filter_input.set_filter(self._tree_filter_text, len(matches), total)
 
         # Jump to first match
         if matches:
             self._jump_to_current_match()
-
 
     def _extract_tree_filter_regex_query(self: TreeFilterMixinHost, raw_text: str) -> str | None:
         """Return regex pattern when the filter text uses a regex prefix."""
@@ -288,9 +331,7 @@ class TreeFilterMixin:
             indices.update(range(start, end))
         return matched, sorted(indices)
 
-    def _find_matching_nodes(
-        self: TreeFilterMixinHost, node: Any, matches: list
-    ) -> bool:
+    def _find_matching_nodes(self: TreeFilterMixinHost, node: Any, matches: list) -> bool:
         """Recursively find nodes matching the filter.
 
         Returns True if this node or any descendant matches.
@@ -322,9 +363,7 @@ class TreeFilterMixin:
                 matches.append(node)
                 # Store original label and apply highlighting
                 self._tree_original_labels[id(node)] = str(node.label)
-                highlighted = highlight_matches(
-                    escape_markup(label_text), indices, style="bold #FFFF00"
-                )
+                highlighted = highlight_matches(escape_markup(label_text), indices, style="bold #FFFF00")
                 # Preserve any existing markup prefix (like icons, colors)
                 node.set_label(self._rebuild_label_with_highlight(node, highlighted))
 
@@ -434,9 +473,7 @@ class TreeFilterMixin:
                 current = current.parent
 
         # Hide non-matching, non-ancestor nodes
-        self._set_node_visibility(
-            self.object_tree.root, match_ids, ancestor_ids, pending_ids, visible=True
-        )
+        self._set_node_visibility(self.object_tree.root, match_ids, ancestor_ids, pending_ids, visible=True)
 
     def _set_node_visibility(
         self: TreeFilterMixinHost,
@@ -477,6 +514,7 @@ class TreeFilterMixin:
 
     def _restore_tree_labels(self: TreeFilterMixinHost) -> None:
         """Restore original labels for all modified nodes."""
+
         def restore_node(node: Any) -> None:
             node_id = id(node)
             if node_id in self._tree_original_labels:
