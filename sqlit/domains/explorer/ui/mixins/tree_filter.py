@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from rich.markup import escape as escape_markup
@@ -22,6 +23,9 @@ class TreeFilterMixin:
     _tree_filter_text: str = ""
     _tree_filter_query: str = ""
     _tree_filter_fuzzy: bool = False
+    _tree_filter_regex_mode: bool = False
+    _tree_filter_regex: re.Pattern[str] | None = None
+    _tree_filter_regex_error: str | None = None
     _tree_filter_typing: bool = False
     _tree_filter_matches: list[Any] = []
     _tree_filter_match_index: int = 0
@@ -47,6 +51,9 @@ class TreeFilterMixin:
         self._tree_filter_text = ""
         self._tree_filter_query = ""
         self._tree_filter_fuzzy = False
+        self._tree_filter_regex_mode = False
+        self._tree_filter_regex = None
+        self._tree_filter_regex_error = None
         self._tree_filter_typing = True
         self._tree_filter_matches = []
         self._tree_filter_match_index = 0
@@ -64,6 +71,9 @@ class TreeFilterMixin:
         self._tree_filter_text = ""
         self._tree_filter_query = ""
         self._tree_filter_fuzzy = False
+        self._tree_filter_regex_mode = False
+        self._tree_filter_regex = None
+        self._tree_filter_regex_error = None
         self._tree_filter_typing = False
         self.tree_filter_input.hide()
         self._restore_tree_labels()
@@ -197,7 +207,24 @@ class TreeFilterMixin:
         total = self._count_all_nodes()
         raw_text = self._tree_filter_text
         self._tree_filter_fuzzy = raw_text.startswith("~")
-        self._tree_filter_query = raw_text[1:] if self._tree_filter_fuzzy else raw_text
+        self._tree_filter_regex_mode = False
+        self._tree_filter_regex = None
+        self._tree_filter_regex_error = None
+
+        if self._tree_filter_fuzzy:
+            self._tree_filter_query = raw_text[1:]
+        else:
+            regex_query = self._extract_tree_filter_regex_query(raw_text)
+            if regex_query is None:
+                self._tree_filter_query = raw_text
+            else:
+                self._tree_filter_regex_mode = True
+                self._tree_filter_query = regex_query
+                if regex_query:
+                    try:
+                        self._tree_filter_regex = re.compile(regex_query, re.IGNORECASE)
+                    except re.error as error:
+                        self._tree_filter_regex_error = str(error)
 
         if not self._tree_filter_query:
             if self._tree_filter_applied or self._tree_filter_matches or self._tree_original_labels:
@@ -230,6 +257,33 @@ class TreeFilterMixin:
         if matches:
             self._jump_to_current_match()
 
+
+    def _extract_tree_filter_regex_query(self: TreeFilterMixinHost, raw_text: str) -> str | None:
+        """Return regex pattern when the filter text uses a regex prefix."""
+        if raw_text.startswith("re:"):
+            return raw_text[3:]
+        if raw_text.startswith("r:"):
+            return raw_text[2:]
+        if raw_text.startswith("/"):
+            return raw_text[1:]
+        return None
+
+    def _match_tree_filter_regex(self: TreeFilterMixinHost, label_text: str) -> tuple[bool, list[int]]:
+        """Match label text with the compiled tree-filter regex and return highlight indices."""
+        regex = self._tree_filter_regex
+        if regex is None:
+            return False, []
+
+        indices: set[int] = set()
+        matched = False
+        for match in regex.finditer(label_text):
+            matched = True
+            start, end = match.span()
+            if start == end:
+                continue
+            indices.update(range(start, end))
+        return matched, sorted(indices)
+
     def _find_matching_nodes(
         self: TreeFilterMixinHost, node: Any, matches: list
     ) -> bool:
@@ -250,6 +304,8 @@ class TreeFilterMixin:
         if label_text:
             if self._tree_filter_fuzzy:
                 matched, indices = fuzzy_match(self._tree_filter_query, label_text)
+            elif self._tree_filter_regex_mode:
+                matched, indices = self._match_tree_filter_regex(label_text)
             else:
                 label_lower = label_text.lower()
                 query_lower = self._tree_filter_query.lower()

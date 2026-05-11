@@ -14,6 +14,9 @@ class ExplorerStateProtocol(Protocol):
     _tree_filter_text: str
     _tree_filter_query: str
     _tree_filter_fuzzy: bool
+    _tree_filter_regex_mode: bool
+    _tree_filter_regex: Any | None
+    _tree_filter_regex_error: str | None
     _tree_filter_typing: bool
     _tree_filter_matches: list[Any]
     _tree_filter_match_index: int

@@ -255,7 +255,7 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         loader = getattr(self, "_load_schema_cache", None)
         if callable(loader):
             request_token = object()
-            setattr(self, "_schema_load_request_token", request_token)
+            self._schema_load_request_token = request_token
 
             def run_loader() -> None:
                 if getattr(self, "_schema_load_request_token", None) is not request_token:
@@ -356,6 +356,176 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         if self._get_node_kind(node) == "sequence":
             tree_object_info.show_sequence_info(self, data)
             return
+
+    def _selected_table_node_data(self: TreeMixinHost) -> Any | None:
+        """Return cursor data when a table/view node is selected."""
+        node = self.object_tree.cursor_node
+        if not node or not node.data or self._get_node_kind(node) not in ("table", "view"):
+            return None
+        return node.data
+
+    def action_show_table_columns(self: TreeMixinHost) -> None:
+        """Show the selected table/view columns in the results panel."""
+        data = self._selected_table_node_data()
+        if data is None:
+            return
+
+        if self._is_mysql_like_provider():
+            if self._show_mysql_full_columns(data):
+                return
+
+        schema_service = self._get_schema_service()
+        if not schema_service:
+            return
+
+        try:
+            columns = schema_service.list_columns(data.database, data.schema, data.name)
+        except Exception as error:
+            self.notify(f"Error getting table columns: {error}", severity="error")
+            return
+
+        rows = [
+            (index + 1, column.name, column.data_type, "Yes" if column.is_primary_key else "")
+            for index, column in enumerate(columns)
+        ]
+        result_columns = ["#", "Column", "Type", "Primary Key"]
+        self._replace_results_table(result_columns, rows)
+        self._last_result_columns = result_columns
+        self._last_result_rows = rows
+        self._last_result_row_count = len(rows)
+        self.query_input.text = f"-- Columns for {data.name}"
+        self.notify(f"Columns: {data.name} ({len(rows)})")
+
+    def _is_mysql_like_provider(self: TreeMixinHost) -> bool:
+        """Return True for providers that support MySQL SHOW FULL COLUMNS."""
+        db_type = getattr(getattr(self.current_provider, "metadata", None), "db_type", "")
+        return str(db_type).lower() in {"mysql", "mariadb"}
+
+    def _format_mysql_table_reference(self: TreeMixinHost, database: str | None, table: str) -> str:
+        """Format a MySQL table reference for SHOW statements."""
+        quote_identifier = getattr(self.current_provider.dialect, "quote_identifier", None)
+        if not callable(quote_identifier):
+            def quote_identifier(name: str) -> str:
+                return f"`{str(name).replace('`', '``')}`"
+
+        quoted_table = quote_identifier(table)
+        if database:
+            return f"{quote_identifier(database)}.{quoted_table}"
+        return quoted_table
+
+    def _show_mysql_full_columns(self: TreeMixinHost, data: Any) -> bool:
+        """Display MySQL/MariaDB SHOW FULL COLUMNS output for the selected table."""
+        if self.current_connection is None or not self.current_provider:
+            return False
+
+        table_ref = self._format_mysql_table_reference(data.database, data.name)
+        query = f"SHOW FULL COLUMNS FROM {table_ref}"
+        try:
+            cursor = self.current_connection.cursor()
+            cursor.execute(query)
+            result_columns = [column[0] for column in cursor.description]
+            rows = [tuple(row) for row in cursor.fetchall()]
+            close = getattr(cursor, "close", None)
+            if callable(close):
+                close()
+        except Exception as error:
+            self.notify(f"Error getting table columns: {error}", severity="error")
+            return True
+
+        self._replace_results_table(result_columns, rows)
+        self._last_result_columns = result_columns
+        self._last_result_rows = rows
+        self._last_result_row_count = len(rows)
+        self.query_input.text = query
+        self.notify(f"Columns: {data.name} ({len(rows)})")
+        return True
+
+    def action_show_table_indexes(self: TreeMixinHost) -> None:
+        """Show the selected table indexes in the results panel."""
+        data = self._selected_table_node_data()
+        if data is None:
+            return
+
+        if not self.current_provider or not self.current_provider.capabilities.supports_indexes:
+            self.notify("Indexes not supported for this database.", severity="warning")
+            return
+
+        if self._is_mysql_like_provider():
+            if self._show_mysql_indexes(data):
+                return
+
+        schema_service = self._get_schema_service()
+        if not schema_service:
+            return
+
+        try:
+            all_indexes = schema_service.list_folder_items("indexes", data.database)
+            matching_indexes = [
+                item for item in all_indexes if len(item) >= 3 and self._index_table_matches(item[2], data.name, data.schema)
+            ]
+            rows = []
+            for _, index_name, table_name in matching_indexes:
+                columns = ""
+                definition = ""
+                is_unique = ""
+                try:
+                    info = schema_service.get_index_definition(data.database, index_name, table_name)
+                except Exception:
+                    info = None
+                if info:
+                    index_columns = info.get("columns") or []
+                    columns = ", ".join(str(column) for column in index_columns)
+                    is_unique = "Yes" if info.get("is_unique") else ""
+                    definition = str(info.get("definition") or "")
+                rows.append((index_name, columns, is_unique, definition))
+        except Exception as error:
+            self.notify(f"Error getting table indexes: {error}", severity="error")
+            return
+
+        result_columns = ["Index", "Columns", "Unique", "Definition"]
+        self._replace_results_table(result_columns, rows)
+        self._last_result_columns = result_columns
+        self._last_result_rows = rows
+        self._last_result_row_count = len(rows)
+        self.query_input.text = f"-- Indexes for {data.name}"
+        self.notify(f"Indexes: {data.name} ({len(rows)})")
+
+    def _show_mysql_indexes(self: TreeMixinHost, data: Any) -> bool:
+        """Display MySQL/MariaDB SHOW INDEX output for the selected table."""
+        if self.current_connection is None or not self.current_provider:
+            return False
+
+        table_ref = self._format_mysql_table_reference(data.database, data.name)
+        query = f"SHOW INDEX FROM {table_ref}"
+        try:
+            cursor = self.current_connection.cursor()
+            cursor.execute(query)
+            result_columns = [column[0] for column in cursor.description]
+            rows = [tuple(row) for row in cursor.fetchall()]
+            close = getattr(cursor, "close", None)
+            if callable(close):
+                close()
+        except Exception as error:
+            self.notify(f"Error getting table indexes: {error}", severity="error")
+            return True
+
+        self._replace_results_table(result_columns, rows)
+        self._last_result_columns = result_columns
+        self._last_result_rows = rows
+        self._last_result_row_count = len(rows)
+        self.query_input.text = query
+        self.notify(f"Indexes: {data.name} ({len(rows)})")
+        return True
+
+    def _index_table_matches(self: TreeMixinHost, index_table: str, table_name: str, schema: str | None = None) -> bool:
+        """Return True when an index entry belongs to the selected table."""
+        index_table_lower = str(index_table).strip().lower()
+        table_name_lower = table_name.strip().lower()
+        if index_table_lower == table_name_lower:
+            return True
+        if schema and index_table_lower == f"{schema.strip().lower()}.{table_name_lower}":
+            return True
+        return index_table_lower.rsplit(".", 1)[-1] == table_name_lower
 
     def action_use_database(self: TreeMixinHost) -> None:
         """Toggle the selected database as the default for the current connection."""
@@ -546,7 +716,7 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         loader = getattr(self, "_load_schema_cache", None)
         if callable(loader):
             request_token = object()
-            setattr(self, "_schema_load_request_token", request_token)
+            self._schema_load_request_token = request_token
 
             def run_loader() -> None:
                 if getattr(self, "_schema_load_request_token", None) is not request_token:

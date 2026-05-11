@@ -35,6 +35,8 @@ class TestKeymapProvider:
         assert keymap.action("new_connection") is not None
         assert keymap.action("focus_query") is not None
         assert keymap.action("focus_explorer") is not None
+        assert keymap.action("show_table_columns") is not None
+        assert keymap.action("show_table_indexes") is not None
 
     def test_custom_keymap_can_be_set(self):
         """Custom keymap provider can be injected."""

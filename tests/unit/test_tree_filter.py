@@ -78,6 +78,9 @@ class FakeTreeFilterHost(TreeFilterMixin):
         self._tree_filter_text = ""
         self._tree_filter_query = ""
         self._tree_filter_fuzzy = False
+        self._tree_filter_regex_mode = False
+        self._tree_filter_regex = None
+        self._tree_filter_regex_error = None
         self._tree_filter_typing = True
         self._tree_filter_matches = []
         self._tree_filter_match_index = 0
@@ -136,3 +139,51 @@ def test_tree_filter_matches_tables_under_non_matching_folder_label() -> None:
     assert tables in root.children
     assert tables.children == [orders]
     assert host.object_tree.selected_node is orders
+
+
+def test_tree_filter_regex_matches_table_labels() -> None:
+    root = FakeNode("root")
+    tables = root.add("Tables", FolderNode(folder_type="tables"))
+    users = tables.add("user_accounts", TableNode(database=None, schema="main", name="user_accounts"))
+    orders = tables.add("orders_2026", TableNode(database=None, schema="main", name="orders_2026"))
+    tables.add("audit_log", TableNode(database=None, schema="main", name="audit_log"))
+    host = FakeTreeFilterHost(root)
+    host._tree_filter_text = r"/^(user|orders)_"
+
+    host._update_tree_filter()
+
+    assert host._tree_filter_regex_mode is True
+    assert host._tree_filter_matches == [users, orders]
+    assert tables.children == [users, orders]
+    assert host.object_tree.selected_node is users
+
+
+def test_tree_filter_regex_supports_re_prefix() -> None:
+    root = FakeNode("root")
+    tables = root.add("Tables", FolderNode(folder_type="tables"))
+    customer = tables.add("customer_profile", TableNode(database=None, schema="main", name="customer_profile"))
+    tables.add("orders", TableNode(database=None, schema="main", name="orders"))
+    host = FakeTreeFilterHost(root)
+    host._tree_filter_text = r"re:_profile$"
+
+    host._update_tree_filter()
+
+    assert host._tree_filter_regex_mode is True
+    assert host._tree_filter_matches == [customer]
+    assert tables.children == [customer]
+
+
+def test_tree_filter_invalid_regex_does_not_raise() -> None:
+    root = FakeNode("root")
+    tables = root.add("Tables", FolderNode(folder_type="tables"))
+    tables.add("orders", TableNode(database=None, schema="main", name="orders"))
+    host = FakeTreeFilterHost(root)
+    host._tree_filter_text = r"/(orders"
+
+    host._update_tree_filter()
+
+    assert host._tree_filter_regex_mode is True
+    assert host._tree_filter_regex is None
+    assert host._tree_filter_regex_error
+    assert host._tree_filter_matches == []
+    assert host.tree_filter_input.last_filter == (r"/(orders", 0, 2)
