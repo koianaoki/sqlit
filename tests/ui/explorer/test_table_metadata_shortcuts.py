@@ -69,7 +69,7 @@ class TestTableMetadataShortcuts:
             [(1, "id", "integer", "Yes"), (2, "email", "varchar", "")],
         )
         assert mixin._last_result_row_count == 2
-        assert mixin.query_input.text == "-- SHOW COLUMNS FROM users"
+        assert mixin.query_input.text == "-- Columns for users"
 
     def test_show_table_indexes_displays_matching_indexes_in_results(self):
         mixin = self._create_mixin()
@@ -94,7 +94,7 @@ class TestTableMetadataShortcuts:
             [("idx_users_email", "email", "Yes", "CREATE UNIQUE INDEX idx_users_email ON users (email)")],
         )
         assert mixin._last_result_row_count == 1
-        assert mixin.query_input.text == "-- SHOW INDEXES FROM users"
+        assert mixin.query_input.text == "-- Indexes for users"
 
     def test_show_table_indexes_warns_when_indexes_not_supported(self):
         mixin = self._create_mixin(supports_indexes=False)

@@ -389,7 +389,7 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         self._last_result_columns = result_columns
         self._last_result_rows = rows
         self._last_result_row_count = len(rows)
-        self.query_input.text = f"-- SHOW COLUMNS FROM {data.name}"
+        self.query_input.text = f"-- Columns for {data.name}"
         self.notify(f"Columns: {data.name} ({len(rows)})")
 
     def action_show_table_indexes(self: TreeMixinHost) -> None:
@@ -433,7 +433,7 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         self._last_result_columns = result_columns
         self._last_result_rows = rows
         self._last_result_row_count = len(rows)
-        self.query_input.text = f"-- SHOW INDEXES FROM {data.name}"
+        self.query_input.text = f"-- Indexes for {data.name}"
         self.notify(f"Indexes: {data.name} ({len(rows)})")
 
     def action_use_database(self: TreeMixinHost) -> None:
