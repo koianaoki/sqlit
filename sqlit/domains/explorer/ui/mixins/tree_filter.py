@@ -131,30 +131,62 @@ class TreeFilterMixin:
             current_node = self._tree_filter_matches[self._tree_filter_match_index]
             current_path = expansion_state.get_node_path(cast(Any, self), current_node)
             self._remember_tree_filter_path(current_path)
-            self._expand_ancestors(current_node)
-            move_cursor = getattr(self.object_tree, "move_cursor", None)
-            if callable(move_cursor):
-                move_cursor(current_node)
-            else:
-                self.object_tree.select_node(current_node)
+            self._move_tree_cursor_to_node(current_node)
 
         # Close the filter
         self.action_tree_filter_close()
 
         if current_path:
-            restored_node = expansion_state.find_node_by_path(cast(Any, self), self.object_tree.root, current_path)
+            restored_node = self._restore_tree_filter_cursor_path(current_path)
             if restored_node is not None:
                 current_node = restored_node
-                self._expand_ancestors(restored_node)
-                move_cursor = getattr(self.object_tree, "move_cursor", None)
-                if callable(move_cursor):
-                    move_cursor(restored_node)
-                else:
-                    self.object_tree.select_node(restored_node)
 
         # Activate the selected node (connect to server, expand folder, etc.)
         if current_node and current_node.data:
             self._activate_tree_node(current_node)
+
+    def _move_tree_cursor_to_node(self: TreeFilterMixinHost, node: Any) -> None:
+        """Move the Explorer cursor to a node, falling back for test doubles."""
+        self._expand_ancestors(node)
+        move_cursor = getattr(self.object_tree, "move_cursor", None)
+        if callable(move_cursor):
+            move_cursor(node)
+        else:
+            self.object_tree.select_node(node)
+        update_footer = getattr(self, "_update_footer_bindings", None)
+        if callable(update_footer):
+            update_footer()
+
+    def _restore_tree_filter_cursor_path(self: TreeFilterMixinHost, path: str, attempt: int = 0) -> Any | None:
+        """Restore cursor to a filtered match after the tree is rebuilt/reloaded."""
+        self._remember_tree_filter_path(path)
+        restored_node = expansion_state.find_node_by_path(cast(Any, self), self.object_tree.root, path)
+        if restored_node is not None:
+            self._move_tree_cursor_to_node(restored_node)
+            return restored_node
+
+        if attempt >= 8:
+            return None
+
+        def retry() -> None:
+            self._restore_tree_filter_cursor_path(path, attempt + 1)
+
+        call_after_refresh = getattr(self, "call_after_refresh", None)
+        if callable(call_after_refresh):
+            call_after_refresh(retry)
+            return None
+
+        set_timer = getattr(self, "set_timer", None)
+        if callable(set_timer):
+            set_timer(0.05, retry)
+            return None
+
+        call_later = getattr(self, "call_later", None)
+        if callable(call_later):
+            call_later(retry)
+            return None
+
+        return None
 
     def action_tree_filter_next(self: TreeFilterMixinHost) -> None:
         """Move to next filter match."""

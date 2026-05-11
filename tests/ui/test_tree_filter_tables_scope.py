@@ -75,6 +75,7 @@ class Host(TreeFilterMixin):
         self._expanded_paths: set[str] = set()
         self._pending_tree_cursor_path = ""
         self._pending_tree_cursor_connection = ""
+        self.timers: list[object] = []
 
     def _get_node_kind(self, node: FakeNode) -> str:
         data = node.data
@@ -93,6 +94,16 @@ class Host(TreeFilterMixin):
 
     def _activate_tree_node(self, node: FakeNode) -> None:
         self.activated_node = node
+
+    def set_timer(self, _delay: float, callback: object) -> None:
+        self.timers.append(callback)
+
+    def run_timers(self) -> None:
+        callbacks = list(self.timers)
+        self.timers = []
+        for callback in callbacks:
+            if callable(callback):
+                callback()
 
 
 def build_host() -> tuple[Host, FakeNode, FakeNode, FakeNode, FakeNode]:
@@ -184,3 +195,21 @@ def test_table_filter_accept_moves_cursor_to_matched_table() -> None:
     assert host._pending_tree_cursor_path == "db:main/folder:tables/table:public.users"
     assert "db:main" in host._expanded_paths
     assert "db:main/folder:tables" in host._expanded_paths
+
+
+def test_table_filter_cursor_restore_retries_until_table_is_reloaded() -> None:
+    host, _database, tables, users, _views = build_host()
+    path = "db:main/folder:tables/table:public.users"
+    users.remove()
+
+    restored = host._restore_tree_filter_cursor_path(path)
+
+    assert restored is None
+    assert host._pending_tree_cursor_path == path
+    assert host.timers
+
+    reloaded_users = tables.add("users")
+    reloaded_users.data = TableNode(database="main", schema="public", name="users")
+    host.run_timers()
+
+    assert host.object_tree.cursor_node is reloaded_users
