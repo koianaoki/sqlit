@@ -46,7 +46,7 @@ class ExplorerActionsProtocol(Protocol):
     def _activate_tree_node(self, node: Any) -> None:
         ...
 
-    def action_tree_filter(self, initial_text: str | None = None) -> None:
+    def action_tree_filter(self) -> None:
         ...
 
     def action_tree_filter_close(self) -> None:
