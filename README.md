@@ -200,6 +200,7 @@ sqlit connections delete "MyConnection"
 | `n` | New query (clear all) |
 | `y` | Copy query (when query editor is focused) |
 | `v` / `y` / `Y` / `a` | View cell / Copy cell / Copy row / Copy all |
+| `yi` | Copy INSERT statement for selected result row |
 | `Ctrl+Q` | Quit |
 | `?` | Help |
 

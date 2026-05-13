@@ -48,6 +48,9 @@ class ResultsActionsProtocol(Protocol):
     def _format_tsv(self, columns: list[str], rows: list[tuple[Any, ...]]) -> str:
         ...
 
+    def _format_sql_value(self, value: object) -> str:
+        ...
+
     def _replace_results_table(self, columns: list[str], rows: list[tuple[Any, ...]]) -> None:
         ...
 
