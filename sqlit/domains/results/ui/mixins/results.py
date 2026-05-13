@@ -175,69 +175,41 @@ class ResultsMixin:
             return str(value)
         return "'" + str(value).replace("'", "''") + "'"
 
-    def _get_results_source_rows(
-        self: ResultsMixinHost,
-        table: SqlitDataTable,
-        rows: list[tuple],
-    ) -> list[tuple]:
-        """Return unrendered row values matching the currently displayed results table."""
-        try:
-            table_row_count = table.row_count
-        except Exception:
-            table_row_count = len(rows)
-
-        # During an active results search, the table contains Rich markup strings
-        # for highlighted matches. Use the original matched rows instead.
-        matching_rows = list(getattr(self, "_results_filter_matching_rows", []))
-        if getattr(self, "_results_filter_visible", False) and len(matching_rows) == table_row_count:
-            return matching_rows
-
-        # After accepting a filter, _last_result_rows/section.result_rows are updated
-        # to the original filtered values, while the displayed table may still hold
-        # highlighted markup strings. Prefer the context rows when they match the
-        # displayed table shape.
-        if len(rows) == table_row_count:
-            return rows
-
-        if len(matching_rows) == table_row_count:
-            return matching_rows
-
-        return rows
-
     @staticmethod
-    def _get_table_cursor_row(table: SqlitDataTable) -> int | None:
-        """Return the current results row index from cursor_coordinate/cursor_row."""
+    def _cursor_row_index(table: SqlitDataTable) -> int | None:
         try:
             coordinate = table.cursor_coordinate
-            cursor_row = getattr(coordinate, "row", None)
-            if cursor_row is not None:
-                return int(cursor_row)
-            cursor_row, _cursor_col = coordinate
-            return int(cursor_row)
+            row = getattr(coordinate, "row", None)
+            if row is not None:
+                return int(row)
+            row, _column = coordinate
+            return int(row)
         except Exception:
             pass
-
         try:
             return int(table.cursor_row)
         except Exception:
             return None
 
-    def _get_results_row_at_cursor(
+    def _row_values_for_copy(
         self: ResultsMixinHost,
         table: SqlitDataTable,
         rows: list[tuple],
     ) -> tuple[Any, ...] | None:
-        """Return unrendered row values for the current cursor row."""
-        cursor_row = self._get_table_cursor_row(table)
-        if cursor_row is None:
+        """Return the selected row, preferring unhighlighted filter data when available."""
+        row_index = self._cursor_row_index(table)
+        if row_index is None:
             return None
 
-        source_rows = self._get_results_source_rows(table, rows)
-        if 0 <= cursor_row < len(source_rows):
-            return tuple(source_rows[cursor_row])
+        matching_rows = getattr(self, "_results_filter_matching_rows", None)
+        if matching_rows is not None and len(matching_rows) == table.row_count and 0 <= row_index < len(matching_rows):
+            return tuple(matching_rows[row_index])
+
+        if len(rows) == table.row_count and 0 <= row_index < len(rows):
+            return tuple(rows[row_index])
 
         try:
-            return tuple(table.get_row_at(cursor_row))
+            return tuple(table.get_row_at(row_index))
         except Exception:
             return None
 
@@ -523,7 +495,7 @@ class ResultsMixin:
                 _cursor_row, cursor_col = table.cursor_coordinate
             except Exception:
                 return
-        row_values = self._get_results_row_at_cursor(table, rows)
+        row_values = self._row_values_for_copy(table, rows)
         if row_values is None or cursor_col >= len(row_values) or cursor_col >= len(columns):
             return
         value = row_values[cursor_col]
@@ -597,7 +569,7 @@ class ResultsMixin:
         if not table or table.row_count <= 0:
             self.notify("No results", severity="warning")
             return
-        row_values = self._get_results_row_at_cursor(table, rows)
+        row_values = self._row_values_for_copy(table, rows)
         if row_values is None:
             return
 
@@ -612,8 +584,6 @@ class ResultsMixin:
             self.notify("No results", severity="warning")
             return
 
-        if table:
-            rows = self._get_results_source_rows(table, rows)
         text = self._format_tsv(columns, rows)
         self._copy_text(text)
         if table:
@@ -648,7 +618,7 @@ class ResultsMixin:
                 _cursor_row, cursor_col = table.cursor_coordinate
             except Exception:
                 return
-        row_values = self._get_results_row_at_cursor(table, rows)
+        row_values = self._row_values_for_copy(table, rows)
         if row_values is None or cursor_col >= len(row_values) or cursor_col >= len(columns):
             return
         value = row_values[cursor_col]
@@ -662,7 +632,7 @@ class ResultsMixin:
         if not table or table.row_count <= 0:
             self.notify("No results", severity="warning")
             return
-        row_values = self._get_results_row_at_cursor(table, rows)
+        row_values = self._row_values_for_copy(table, rows)
         if row_values is None:
             return
         text = self._format_tsv([], [tuple(row_values)])
@@ -676,8 +646,6 @@ class ResultsMixin:
         if not columns and not rows:
             self.notify("No results", severity="warning")
             return
-        if table:
-            rows = self._get_results_source_rows(table, rows)
         text = self._format_tsv(columns, rows)
         self._copy_text(text)
         if table:
@@ -695,7 +663,7 @@ class ResultsMixin:
             self.notify("No column info", severity="warning")
             return
 
-        row_values = self._get_results_row_at_cursor(table, _rows)
+        row_values = self._row_values_for_copy(table, _rows)
         if row_values is None:
             return
 
@@ -924,8 +892,10 @@ class ResultsMixin:
             self.notify("No column info", severity="warning")
             return
 
-        row_values = self._get_results_row_at_cursor(table, _rows)
-        if row_values is None:
+        try:
+            cursor_row, _cursor_col = table.cursor_coordinate
+            row_values = table.get_row_at(cursor_row)
+        except Exception:
             return
 
         # Get table name and primary key columns
@@ -994,14 +964,9 @@ class ResultsMixin:
             return
 
         try:
-            cursor_col = table.cursor_coordinate.column
+            cursor_row, cursor_col = table.cursor_coordinate
+            row_values = table.get_row_at(cursor_row)
         except Exception:
-            try:
-                _cursor_row, cursor_col = table.cursor_coordinate
-            except Exception:
-                return
-        row_values = self._get_results_row_at_cursor(table, _rows)
-        if row_values is None:
             return
 
         # Get column name
