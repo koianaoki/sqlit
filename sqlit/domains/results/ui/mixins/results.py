@@ -112,9 +112,7 @@ class ResultsMixin:
     def _normalize_column_name(self: ResultsMixinHost, name: str) -> str:
         trimmed = name.strip()
         if len(trimmed) >= 2:
-            if trimmed[0] == trimmed[-1] and trimmed[0] in ("\"", "`"):
-                trimmed = trimmed[1:-1]
-            elif trimmed[0] == "[" and trimmed[-1] == "]":
+            if (trimmed[0] == trimmed[-1] and trimmed[0] in ("\"", "`")) or (trimmed[0] == "[" and trimmed[-1] == "]"):
                 trimmed = trimmed[1:-1]
         if "." in trimmed and not any(q in trimmed for q in ("\"", "`", "[")):
             trimmed = trimmed.split(".")[-1]
@@ -166,6 +164,16 @@ class ResultsMixin:
             return True
         except Exception:
             return False
+
+    def _format_sql_value(self: ResultsMixinHost, value: object) -> str:
+        """Format a Python value as a SQL literal."""
+        if value is None:
+            return "NULL"
+        if isinstance(value, bool):
+            return "TRUE" if value else "FALSE"
+        if isinstance(value, int | float):
+            return str(value)
+        return "'" + str(value).replace("'", "''") + "'"
 
     def _get_active_results_context(
         self: ResultsMixinHost,
@@ -593,6 +601,51 @@ class ResultsMixin:
         if table:
             self._flash_table_yank(table, "all")
 
+    def action_ry_insert(self: ResultsMixinHost) -> None:
+        """Copy an INSERT statement for the selected row (from yank menu)."""
+        self._clear_leader_pending()
+        table, columns, _rows, _stacked = self._get_active_results_context()
+        if not table or table.row_count <= 0:
+            self.notify("No results", severity="warning")
+            return
+
+        if not columns:
+            self.notify("No column info", severity="warning")
+            return
+
+        try:
+            cursor_coordinate = table.cursor_coordinate
+            cursor_row = getattr(cursor_coordinate, "row", None)
+            if cursor_row is None:
+                cursor_row, _cursor_col = cursor_coordinate
+        except Exception:
+            cursor_row = getattr(table, "cursor_row", None)
+
+        if cursor_row is None:
+            return
+
+        try:
+            row_values = table.get_row_at(cursor_row)
+        except Exception:
+            return
+
+        insert_columns = list(columns[: len(row_values)])
+        if not insert_columns:
+            self.notify("No row values", severity="warning")
+            return
+
+        table_info = self._get_active_results_table_info(table, _stacked)
+        table_name = "<table>"
+        if table_info:
+            table_name = table_info.get("name") or table_name
+
+        column_list = ", ".join(insert_columns)
+        value_list = ", ".join(self._format_sql_value(value) for value in row_values[: len(insert_columns)])
+        query = f"INSERT INTO {table_name} ({column_list}) VALUES ({value_list});"
+
+        self._copy_text(query)
+        self._flash_table_yank(table, "row")
+
     def action_ry_export(self: ResultsMixinHost) -> None:
         """Open the export submenu."""
         self._clear_leader_pending()
@@ -807,17 +860,6 @@ class ResultsMixin:
         except Exception:
             return
 
-        # Format value for SQL
-        def sql_value(v: object) -> str:
-            if v is None:
-                return "NULL"
-            if isinstance(v, bool):
-                return "TRUE" if v else "FALSE"
-            if isinstance(v, int | float):
-                return str(v)
-            # String - escape single quotes
-            return "'" + str(v).replace("'", "''") + "'"
-
         # Get table name and primary key columns
         table_name = "<table>"
         pk_column_names: set[str] = set()
@@ -840,7 +882,7 @@ class ResultsMixin:
                 if val is None:
                     where_parts.append(f"{col} IS NULL")
                 else:
-                    where_parts.append(f"{col} = {sql_value(val)}")
+                    where_parts.append(f"{col} = {self._format_sql_value(val)}")
 
         # If no where parts (no PKs matched result columns), fall back to all columns
         if not where_parts:
@@ -850,7 +892,7 @@ class ResultsMixin:
                     if val is None:
                         where_parts.append(f"{col} IS NULL")
                     else:
-                        where_parts.append(f"{col} = {sql_value(val)}")
+                        where_parts.append(f"{col} = {self._format_sql_value(val)}")
 
         if not where_parts:
             self.notify("No row values", severity="warning")
@@ -902,17 +944,6 @@ class ResultsMixin:
                     self.notify("Cannot edit primary key column", severity="warning")
                     return
 
-        # Format value for SQL
-        def sql_value(v: object) -> str:
-            if v is None:
-                return "NULL"
-            if isinstance(v, bool):
-                return "TRUE" if v else "FALSE"
-            if isinstance(v, int | float):
-                return str(v)
-            # String - escape single quotes
-            return "'" + str(v).replace("'", "''") + "'"
-
         # Get table name and primary key columns
         table_name = "<table>"
         pk_column_names: set[str] = set()
@@ -934,7 +965,7 @@ class ResultsMixin:
                 if val is None:
                     where_parts.append(f"{col} IS NULL")
                 else:
-                    where_parts.append(f"{col} = {sql_value(val)}")
+                    where_parts.append(f"{col} = {self._format_sql_value(val)}")
 
         # If no where parts (no PKs matched result columns), fall back to all columns
         if not where_parts:
@@ -944,7 +975,7 @@ class ResultsMixin:
                     if val is None:
                         where_parts.append(f"{col} IS NULL")
                     else:
-                        where_parts.append(f"{col} = {sql_value(val)}")
+                        where_parts.append(f"{col} = {self._format_sql_value(val)}")
 
         where_clause = " AND ".join(where_parts)
 
