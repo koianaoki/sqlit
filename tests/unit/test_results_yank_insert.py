@@ -147,24 +147,24 @@ def test_action_ry_insert_formats_null_bool_number_and_escaped_string() -> None:
 def test_action_ry_insert_uses_unrendered_values_during_search_highlight() -> None:
     host = _Host(
         ["text"],
-        [("aaa_aaa_aaa_aaa",)],
-        table_rows=[("aaa_[bold #FFFF00]aaa[/]_aaa_aaa",)],
+        [("aaa_bbb",)],
+        table_rows=[("aaa_[bold #FFFF00]bbb[/]",)],
         filter_visible=True,
     )
 
     host.action_ry_insert()
 
-    assert host.copied_text == "INSERT INTO users (text) VALUES ('aaa_aaa_aaa_aaa');"
+    assert host.copied_text == "INSERT INTO users (text) VALUES ('aaa_bbb');"
 
 
 def test_action_ry_row_uses_unrendered_values_during_search_highlight() -> None:
     host = _Host(
         ["text"],
-        [("aaa_aaa_aaa_aaa",)],
-        table_rows=[("aaa_[bold #FFFF00]aaa[/]_aaa_aaa",)],
+        [("aaa_bbb",)],
+        table_rows=[("aaa_[bold #FFFF00]bbb[/]",)],
         filter_visible=True,
     )
 
     host.action_ry_row()
 
-    assert host.copied_text == "aaa_aaa_aaa_aaa"
+    assert host.copied_text == "aaa_bbb"
