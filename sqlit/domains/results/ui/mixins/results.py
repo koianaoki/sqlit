@@ -175,6 +175,72 @@ class ResultsMixin:
             return str(value)
         return "'" + str(value).replace("'", "''") + "'"
 
+    def _get_results_source_rows(
+        self: ResultsMixinHost,
+        table: SqlitDataTable,
+        rows: list[tuple],
+    ) -> list[tuple]:
+        """Return unrendered row values matching the currently displayed results table."""
+        try:
+            table_row_count = table.row_count
+        except Exception:
+            table_row_count = len(rows)
+
+        # During an active results search, the table contains Rich markup strings
+        # for highlighted matches. Use the original matched rows instead.
+        matching_rows = list(getattr(self, "_results_filter_matching_rows", []))
+        if getattr(self, "_results_filter_visible", False) and len(matching_rows) == table_row_count:
+            return matching_rows
+
+        # After accepting a filter, _last_result_rows/section.result_rows are updated
+        # to the original filtered values, while the displayed table may still hold
+        # highlighted markup strings. Prefer the context rows when they match the
+        # displayed table shape.
+        if len(rows) == table_row_count:
+            return rows
+
+        if len(matching_rows) == table_row_count:
+            return matching_rows
+
+        return rows
+
+    @staticmethod
+    def _get_table_cursor_row(table: SqlitDataTable) -> int | None:
+        """Return the current results row index from cursor_coordinate/cursor_row."""
+        try:
+            coordinate = table.cursor_coordinate
+            cursor_row = getattr(coordinate, "row", None)
+            if cursor_row is not None:
+                return int(cursor_row)
+            cursor_row, _cursor_col = coordinate
+            return int(cursor_row)
+        except Exception:
+            pass
+
+        try:
+            return int(table.cursor_row)
+        except Exception:
+            return None
+
+    def _get_results_row_at_cursor(
+        self: ResultsMixinHost,
+        table: SqlitDataTable,
+        rows: list[tuple],
+    ) -> tuple[Any, ...] | None:
+        """Return unrendered row values for the current cursor row."""
+        cursor_row = self._get_table_cursor_row(table)
+        if cursor_row is None:
+            return None
+
+        source_rows = self._get_results_source_rows(table, rows)
+        if 0 <= cursor_row < len(source_rows):
+            return tuple(source_rows[cursor_row])
+
+        try:
+            return tuple(table.get_row_at(cursor_row))
+        except Exception:
+            return None
+
     def _get_active_results_context(
         self: ResultsMixinHost,
     ) -> tuple[SqlitDataTable | None, list[str], list[tuple], bool]:
@@ -446,14 +512,21 @@ class ResultsMixin:
 
     def action_copy_cell(self: ResultsMixinHost) -> None:
         """Copy the selected cell to clipboard (or internal clipboard)."""
-        table, _columns, _rows, _stacked = self._get_active_results_context()
+        table, columns, rows, _stacked = self._get_active_results_context()
         if not table or table.row_count <= 0:
             self.notify("No results", severity="warning")
             return
         try:
-            value = table.get_cell_at(table.cursor_coordinate)
+            cursor_col = table.cursor_coordinate.column
         except Exception:
+            try:
+                _cursor_row, cursor_col = table.cursor_coordinate
+            except Exception:
+                return
+        row_values = self._get_results_row_at_cursor(table, rows)
+        if row_values is None or cursor_col >= len(row_values) or cursor_col >= len(columns):
             return
+        value = row_values[cursor_col]
         self._copy_text(str(value) if value is not None else "NULL")
         self._flash_table_yank(table, "cell")
 
@@ -520,13 +593,12 @@ class ResultsMixin:
 
     def action_copy_row(self: ResultsMixinHost) -> None:
         """Copy the selected row to clipboard (TSV)."""
-        table, _columns, _rows, _stacked = self._get_active_results_context()
+        table, _columns, rows, _stacked = self._get_active_results_context()
         if not table or table.row_count <= 0:
             self.notify("No results", severity="warning")
             return
-        try:
-            row_values = table.get_row_at(table.cursor_row)
-        except Exception:
+        row_values = self._get_results_row_at_cursor(table, rows)
+        if row_values is None:
             return
 
         text = self._format_tsv([], [tuple(row_values)])
@@ -540,6 +612,8 @@ class ResultsMixin:
             self.notify("No results", severity="warning")
             return
 
+        if table:
+            rows = self._get_results_source_rows(table, rows)
         text = self._format_tsv(columns, rows)
         self._copy_text(text)
         if table:
@@ -563,27 +637,33 @@ class ResultsMixin:
     def action_ry_cell(self: ResultsMixinHost) -> None:
         """Copy cell (from yank menu)."""
         self._clear_leader_pending()
-        table, _columns, _rows, _stacked = self._get_active_results_context()
+        table, columns, rows, _stacked = self._get_active_results_context()
         if not table or table.row_count <= 0:
             self.notify("No results", severity="warning")
             return
         try:
-            value = table.get_cell_at(table.cursor_coordinate)
+            cursor_col = table.cursor_coordinate.column
         except Exception:
+            try:
+                _cursor_row, cursor_col = table.cursor_coordinate
+            except Exception:
+                return
+        row_values = self._get_results_row_at_cursor(table, rows)
+        if row_values is None or cursor_col >= len(row_values) or cursor_col >= len(columns):
             return
+        value = row_values[cursor_col]
         self._copy_text(str(value) if value is not None else "NULL")
         self._flash_table_yank(table, "cell")
 
     def action_ry_row(self: ResultsMixinHost) -> None:
         """Copy row (from yank menu)."""
         self._clear_leader_pending()
-        table, _columns, _rows, _stacked = self._get_active_results_context()
+        table, _columns, rows, _stacked = self._get_active_results_context()
         if not table or table.row_count <= 0:
             self.notify("No results", severity="warning")
             return
-        try:
-            row_values = table.get_row_at(table.cursor_row)
-        except Exception:
+        row_values = self._get_results_row_at_cursor(table, rows)
+        if row_values is None:
             return
         text = self._format_tsv([], [tuple(row_values)])
         self._copy_text(text)
@@ -596,6 +676,8 @@ class ResultsMixin:
         if not columns and not rows:
             self.notify("No results", severity="warning")
             return
+        if table:
+            rows = self._get_results_source_rows(table, rows)
         text = self._format_tsv(columns, rows)
         self._copy_text(text)
         if table:
@@ -613,20 +695,8 @@ class ResultsMixin:
             self.notify("No column info", severity="warning")
             return
 
-        try:
-            cursor_coordinate = table.cursor_coordinate
-            cursor_row = getattr(cursor_coordinate, "row", None)
-            if cursor_row is None:
-                cursor_row, _cursor_col = cursor_coordinate
-        except Exception:
-            cursor_row = getattr(table, "cursor_row", None)
-
-        if cursor_row is None:
-            return
-
-        try:
-            row_values = table.get_row_at(cursor_row)
-        except Exception:
+        row_values = self._get_results_row_at_cursor(table, _rows)
+        if row_values is None:
             return
 
         insert_columns = list(columns[: len(row_values)])
@@ -854,10 +924,8 @@ class ResultsMixin:
             self.notify("No column info", severity="warning")
             return
 
-        try:
-            cursor_row, _cursor_col = table.cursor_coordinate
-            row_values = table.get_row_at(cursor_row)
-        except Exception:
+        row_values = self._get_results_row_at_cursor(table, _rows)
+        if row_values is None:
             return
 
         # Get table name and primary key columns
@@ -926,9 +994,14 @@ class ResultsMixin:
             return
 
         try:
-            cursor_row, cursor_col = table.cursor_coordinate
-            row_values = table.get_row_at(cursor_row)
+            cursor_col = table.cursor_coordinate.column
         except Exception:
+            try:
+                _cursor_row, cursor_col = table.cursor_coordinate
+            except Exception:
+                return
+        row_values = self._get_results_row_at_cursor(table, _rows)
+        if row_values is None:
             return
 
         # Get column name

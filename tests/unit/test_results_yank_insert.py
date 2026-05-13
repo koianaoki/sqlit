@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 from types import ModuleType
 from typing import Any
@@ -11,11 +12,7 @@ from sqlit.core.key_router import resolve_action
 from sqlit.core.keymap import get_keymap
 from sqlit.core.vim import VimMode
 
-try:
-    from sqlit.domains.results.ui.mixins.results import ResultsMixin
-except ModuleNotFoundError as exc:
-    if exc.name != "textual":
-        raise
+if importlib.util.find_spec("textual") is None:
     widgets_module = ModuleType("sqlit.shared.ui.widgets")
 
     class _StubSqlitDataTable:
@@ -23,7 +20,8 @@ except ModuleNotFoundError as exc:
 
     widgets_module.SqlitDataTable = _StubSqlitDataTable
     sys.modules["sqlit.shared.ui.widgets"] = widgets_module
-    from sqlit.domains.results.ui.mixins.results import ResultsMixin
+
+from sqlit.domains.results.ui.mixins.results import ResultsMixin
 
 
 class _ResultsArea:
@@ -44,11 +42,21 @@ class _Table:
 
 
 class _Host(ResultsMixin):
-    def __init__(self, columns: list[str], rows: list[tuple[Any, ...]], *, cursor_row: int = 0) -> None:
+    def __init__(
+        self,
+        columns: list[str],
+        rows: list[tuple[Any, ...]],
+        *,
+        cursor_row: int = 0,
+        table_rows: list[tuple[Any, ...]] | None = None,
+        filter_visible: bool = False,
+    ) -> None:
         self.results_area = _ResultsArea()
-        self.results_table = _Table(rows, cursor_row=cursor_row)
+        self.results_table = _Table(table_rows or rows, cursor_row=cursor_row)
         self._last_result_columns = columns
         self._last_result_rows = rows
+        self._results_filter_visible = filter_visible
+        self._results_filter_matching_rows = rows
         self._last_query_table = None
         self.copied_text: str | None = None
         self.notifications: list[tuple[str, str | None]] = []
@@ -134,3 +142,29 @@ def test_action_ry_insert_formats_null_bool_number_and_escaped_string() -> None:
         "INSERT INTO users (id, name, active, score, note) "
         "VALUES (1, 'Alice''s', TRUE, 12.5, NULL);"
     )
+
+
+def test_action_ry_insert_uses_unrendered_values_during_search_highlight() -> None:
+    host = _Host(
+        ["text"],
+        [("aaa_aaa_aaa_aaa",)],
+        table_rows=[("aaa_[bold #FFFF00]aaa[/]_aaa_aaa",)],
+        filter_visible=True,
+    )
+
+    host.action_ry_insert()
+
+    assert host.copied_text == "INSERT INTO users (text) VALUES ('aaa_aaa_aaa_aaa');"
+
+
+def test_action_ry_row_uses_unrendered_values_during_search_highlight() -> None:
+    host = _Host(
+        ["text"],
+        [("aaa_aaa_aaa_aaa",)],
+        table_rows=[("aaa_[bold #FFFF00]aaa[/]_aaa_aaa",)],
+        filter_visible=True,
+    )
+
+    host.action_ry_row()
+
+    assert host.copied_text == "aaa_aaa_aaa_aaa"
