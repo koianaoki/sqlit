@@ -60,7 +60,7 @@ def _should_load_expanded_node(host: TreeMixinHost, node: Any) -> bool:
     if host.current_connection is None or host.current_provider is None:
         return False
     kind = host._get_node_kind(node)
-    if kind not in ("folder", "table", "view"):
+    if kind != "folder":
         return False
     children = list(node.children)
     if children:
@@ -76,10 +76,7 @@ def _should_load_expanded_node(host: TreeMixinHost, node: Any) -> bool:
         return False
     loading_nodes.add(node_path)
     add_loading_placeholder(host, node)
-    if kind in ("table", "view"):
-        host._load_columns_async(node, node.data)
-    else:
-        host._load_folder_async(node, node.data)
+    host._load_folder_async(node, node.data)
     return True
 
 

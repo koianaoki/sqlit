@@ -176,7 +176,7 @@ def test_refresh_restores_expanded_folder_loads_tables() -> None:
     assert host.folder_load_calls == ["tables"]
 
 
-def test_refresh_restores_expanded_table_loads_columns() -> None:
+def test_refresh_does_not_restore_expanded_table_columns() -> None:
     host = MockHost()
 
     tree_builder.refresh_tree_incremental(host)
@@ -197,4 +197,4 @@ def test_refresh_restores_expanded_table_loads_columns() -> None:
         [("table", "public", "users")],
     )
 
-    assert host.column_load_calls == ["users"]
+    assert host.column_load_calls == []

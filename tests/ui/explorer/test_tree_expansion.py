@@ -191,8 +191,8 @@ class TestTreeExpansion:
 
         assert not load_called
 
-    def test_expand_table_loads_columns(self):
-        """Expanding a table node should trigger column loading."""
+    def test_expand_table_does_not_load_columns(self):
+        """Expanding a table node should not show columns in the explorer."""
         mixin, adapter = self._create_mixin_with_adapter([])
 
         table_node = MockTreeNode("users", TableNode(database="mydb", schema="public", name="users"))
@@ -208,8 +208,8 @@ class TestTreeExpansion:
         event = MockNodeExpandedEvent(table_node)
         mixin.on_tree_node_expanded(event)
 
-        assert load_columns_called
-        assert isinstance(table_node.children[0].data, LoadingNode)
+        assert not load_columns_called
+        assert table_node.children == []
 
     def test_expand_without_connection_is_noop(self):
         """Expanding when not connected should do nothing."""
@@ -237,8 +237,8 @@ class TestTreeExpansion:
         assert not load_called
         assert len(tables_folder.children) == 0
 
-    def test_schema_folder_tables_are_expandable(self):
-        """Tables under schema folders should be expandable for columns."""
+    def test_schema_folder_tables_are_not_expandable(self):
+        """Tables under schema folders should not expand to show columns."""
         mixin = object.__new__(TreeMixin)
         mixin._loading_nodes = set()
         mixin._session = MockSession(MockAdapter([], "public"))
@@ -256,4 +256,4 @@ class TestTreeExpansion:
             assert isinstance(schema_folder.data, SchemaNode)
             for table_node in schema_folder.children:
                 assert isinstance(table_node.data, TableNode)
-                assert table_node.allow_expand is True
+                assert table_node.allow_expand is False
