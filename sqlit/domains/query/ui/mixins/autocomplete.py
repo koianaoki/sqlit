@@ -86,15 +86,28 @@ class AutocompleteMixin(AutocompleteSchemaMixin, AutocompleteSuggestionsMixin):
         self._hide_autocomplete()
 
     def _location_to_offset(self, text: str, location: tuple[int, int]) -> int:
-        """Convert (row, col) location to text offset."""
+        """Convert (row, col) location to text offset.
+
+        TextArea cursor locations can briefly become stale while debounced
+        autocomplete callbacks are waiting to run. Clamp the location to the
+        current text so stale row values do not index past the available lines.
+        """
         row, col = location
         lines = text.split("\n")
-        offset = sum(len(lines[i]) + 1 for i in range(row))
-        offset += col
+
+        if row <= 0:
+            return max(0, min(col, len(lines[0]) if lines else 0))
+
+        if row >= len(lines):
+            return len(text)
+
+        offset = sum(len(line) + 1 for line in lines[:row])
+        offset += max(0, min(col, len(lines[row])))
         return min(offset, len(text))
 
     def _offset_to_location(self, text: str, offset: int) -> tuple[int, int]:
         """Convert text offset to (row, col) location."""
+        offset = max(0, min(offset, len(text)))
         lines = text.split("\n")
         current_offset = 0
         for row, line in enumerate(lines):
