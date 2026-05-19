@@ -224,6 +224,7 @@ class TestTableMetadataShortcuts:
 
         assert right == []
         actions = [binding.action for binding in left]
+        assert "toggle_node" not in actions
         assert "select_table" in actions
         assert "show_table_columns" in actions
         assert "show_table_indexes" in actions
