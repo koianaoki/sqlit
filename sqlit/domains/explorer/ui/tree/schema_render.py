@@ -89,9 +89,7 @@ def add_schema_grouped_items(
                 child.data = TableNode(database=db_name, schema=schema_name, name=obj_name)
             else:
                 child.data = ViewNode(database=db_name, schema=schema_name, name=obj_name)
-            child.allow_expand = True
-            if expansion_state.get_node_path(host, child) in expanded_paths:
-                child.expand()
+            child.allow_expand = False
         idx = end
         tree_builder.restore_pending_cursor(host)
         if idx < len(items_to_add):

@@ -374,8 +374,8 @@ class TestExpandingTablesWithMultipleSchemas:
         for schema_folder in parent.children:
             assert schema_folder.allow_expand is True
 
-    def test_table_nodes_under_schema_are_expandable(self):
-        """Table nodes under schema folders should be expandable (for columns)."""
+    def test_table_nodes_under_schema_are_not_expandable(self):
+        """Table nodes under schema folders should not expand to show columns."""
         mixin = object.__new__(TreeMixin)
         mixin._loading_nodes = set()
         mixin._session = MockSession(MockAdapter(default_schema="public"))
@@ -391,7 +391,7 @@ class TestExpandingTablesWithMultipleSchemas:
 
         for schema_folder in parent.children:
             for table_node in schema_folder.children:
-                assert table_node.allow_expand is True
+                assert table_node.allow_expand is False
 
 
 class TestEscapeMarkupFunction:

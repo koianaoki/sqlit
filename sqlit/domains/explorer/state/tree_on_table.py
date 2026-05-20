@@ -29,8 +29,6 @@ class TreeOnTableState(State):
         left: list[DisplayBinding] = []
         seen: set[str] = set()
 
-        left.append(DisplayBinding(key="enter", label="Columns", action="toggle_node"))
-        seen.add("toggle_node")
         left.append(
             DisplayBinding(
                 key=resolve_display_key("select_table") or "s",

@@ -16,7 +16,6 @@ from typing import Any
 import pytest
 
 from sqlit.domains.explorer.domain.tree_nodes import (
-    ColumnNode,
     ConnectionNode,
     IndexNode,
     TriggerNode,
@@ -364,10 +363,6 @@ def _build_connection_config(spec: ProviderSpec) -> ConnectionConfig:
     )
 
 
-def _has_column_children(node: Any) -> bool:
-    return any(isinstance(child.data, ColumnNode) for child in node.children)
-
-
 def _has_connected_tables_folder(app: SSMSTUI) -> bool:
     if app.current_config is None:
         return False
@@ -540,15 +535,6 @@ async def _wait_for_folder_loaded(pilot: Any, node: Any, description: str) -> No
     )
 
 
-async def _wait_for_columns_loaded(pilot: Any, node: Any) -> None:
-    await wait_for_condition(
-        pilot,
-        lambda: not has_loading_children(node) and _has_column_children(node),
-        timeout_seconds=10.0,
-        description="columns to load",
-    )
-
-
 async def _wait_for_autocomplete_columns(app: SSMSTUI, pilot: Any, table_key: str) -> None:
     await wait_for_condition(
         pilot,
@@ -681,7 +667,7 @@ async def _connect_and_prepare_tree(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("provider_spec", PROVIDERS, indirect=True)
 @pytest.mark.parametrize("stale_method", ["idle", "kill"])
-async def test_columns_reconnect_after_stale_connection(
+async def test_table_node_does_not_expand_columns_after_stale_connection(
     provider_spec: ProviderSpec, stale_method: str
 ) -> None:
     if stale_method == "idle" and not provider_spec.supports_idle:
@@ -698,8 +684,9 @@ async def test_columns_reconnect_after_stale_connection(
         table_node.expand()
         await pilot.pause(0.2)
 
-        await _wait_for_columns_loaded(pilot, table_node)
-        assert _has_column_children(table_node)
+        assert table_node.allow_expand is False
+        assert not has_loading_children(table_node)
+        assert table_node.children == []
 
 
 @pytest.mark.asyncio

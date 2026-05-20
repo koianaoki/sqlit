@@ -223,8 +223,8 @@ class TestSchemaGrouping:
             for child in schema_folder.children:
                 assert isinstance(child.data, ViewNode)
 
-    def test_table_nodes_are_expandable(self):
-        """Table nodes should be expandable (for columns)."""
+    def test_table_nodes_are_not_expandable(self):
+        """Table nodes should not expand to show columns in the explorer."""
         adapter = MockAdapter(
             tables=[("public", "users")],
             default_schema="public",
@@ -241,7 +241,7 @@ class TestSchemaGrouping:
 
         # Single schema - table directly under parent
         table_node = parent.children[0]
-        assert table_node.allow_expand is True
+        assert table_node.allow_expand is False
 
     def test_schema_node_data_structure(self):
         """Schema nodes should have correct data structure."""
