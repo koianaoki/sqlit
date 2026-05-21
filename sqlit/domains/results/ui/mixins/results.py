@@ -639,6 +639,12 @@ class ResultsMixin:
         if table:
             self._flash_table_yank(table, "all")
 
+    def _build_insert_statement(self: ResultsMixinHost, table_name: str, columns: list[str], row_values: tuple[Any, ...]) -> str:
+        insert_columns = list(columns[: len(row_values)])
+        column_list = ", ".join(insert_columns)
+        value_list = ", ".join(self._format_sql_value(value) for value in row_values[: len(insert_columns)])
+        return f"INSERT INTO {table_name} ({column_list}) VALUES ({value_list});"
+
     def action_ry_insert(self: ResultsMixinHost) -> None:
         """Copy an INSERT statement for the selected row (from yank menu)."""
         self._clear_leader_pending()
@@ -655,8 +661,35 @@ class ResultsMixin:
         if row_values is None:
             return
 
-        insert_columns = list(columns[: len(row_values)])
-        if not insert_columns:
+        table_info = self._get_active_results_table_info(table, _stacked)
+        table_name = "<table>"
+        if table_info:
+            table_name = table_info.get("name") or table_name
+
+        query = self._build_insert_statement(table_name, columns, row_values)
+
+        self._copy_text(query)
+        self._flash_table_yank(table, "row")
+
+    def action_ry_insert_all(self: ResultsMixinHost) -> None:
+        """Copy INSERT statements for all currently visible rows (from yank menu)."""
+        self._clear_leader_pending()
+        table, columns, rows, _stacked = self._get_active_results_context()
+        if not table or table.row_count <= 0:
+            self.notify("No results", severity="warning")
+            return
+
+        if not columns:
+            self.notify("No column info", severity="warning")
+            return
+
+        matching_rows = getattr(self, "_results_filter_matching_rows", None)
+        source_rows = (
+            list(matching_rows)
+            if matching_rows is not None and len(matching_rows) == table.row_count
+            else list(rows[: table.row_count])
+        )
+        if not source_rows:
             self.notify("No row values", severity="warning")
             return
 
@@ -665,12 +698,13 @@ class ResultsMixin:
         if table_info:
             table_name = table_info.get("name") or table_name
 
-        column_list = ", ".join(insert_columns)
-        value_list = ", ".join(self._format_sql_value(value) for value in row_values[: len(insert_columns)])
-        query = f"INSERT INTO {table_name} ({column_list}) VALUES ({value_list});"
+        query = "
+".join(
+            self._build_insert_statement(table_name, columns, tuple(row_values)) for row_values in source_rows
+        )
 
         self._copy_text(query)
-        self._flash_table_yank(table, "row")
+        self._flash_table_yank(table, "all")
 
     def action_ry_export(self: ResultsMixinHost) -> None:
         """Open the export submenu."""

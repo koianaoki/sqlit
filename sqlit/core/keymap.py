@@ -289,7 +289,8 @@ class DefaultKeymapProvider(KeymapProvider):
             LeaderCommandDef("c", "cell", "Copy cell", "Copy", menu="ry"),
             LeaderCommandDef("y", "row", "Copy row", "Copy", menu="ry"),
             LeaderCommandDef("a", "all", "Copy all", "Copy", menu="ry"),
-            LeaderCommandDef("i", "insert", "Copy INSERT", "Copy", menu="ry"),
+            LeaderCommandDef("i", "insert", "Copy INSERT (row)", "Copy", menu="ry"),
+            LeaderCommandDef("I", "insert_all", "Copy INSERT (all)", "Copy", menu="ry"),
             LeaderCommandDef("e", "export", "Export...", "Export", menu="ry"),
             # rye results export menu
             LeaderCommandDef("c", "csv", "Export as CSV", "Export", menu="rye"),
