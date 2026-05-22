@@ -168,3 +168,31 @@ def test_action_ry_row_uses_unrendered_values_during_search_highlight() -> None:
     host.action_ry_row()
 
     assert host.copied_text == "aaa_bbb"
+
+
+def test_ry_leader_menu_resolves_shift_i_to_ry_insert_all() -> None:
+    keymap = get_keymap()
+    assert keymap.leader("insert_all", menu="ry") == "I"
+
+
+def test_action_ry_insert_all_copies_all_rows_as_single_insert_statement() -> None:
+    host = _Host(["id", "name"], [(1, "Alice"), (2, "Bob")])
+
+    host.action_ry_insert_all()
+
+    assert host.copied_text == (
+        "INSERT INTO users (id, name) VALUES\n"
+        "(1, 'Alice'),\n"
+        "(2, 'Bob');"
+    )
+    assert host.flashes == [(host.results_table, "all")]
+
+
+def test_action_ry_insert_all_uses_filtered_rows_only() -> None:
+    host = _Host(["id", "name"], [(1, "Alice"), (2, "Bob"), (3, "Carol")], filter_visible=True)
+    host._results_filter_matching_rows = [(2, "Bob")]
+    host.results_table = _Table([("2", "Bob")])
+
+    host.action_ry_insert_all()
+
+    assert host.copied_text == "INSERT INTO users (id, name) VALUES (2, 'Bob');"

@@ -282,7 +282,8 @@ class UIStateMachine:
         lines.append(binding("yc", "Copy cell"))
         lines.append(binding("yy", "Copy row"))
         lines.append(binding("ya", "Copy all"))
-        lines.append(binding("yi", "Copy INSERT"))
+        lines.append(binding("yi", "Copy INSERT (row)"))
+        lines.append(binding("yI", "Copy INSERT (all visible rows)"))
         lines.append(binding("ye", "Export menu..."))
         lines.append("")
 
