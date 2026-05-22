@@ -698,8 +698,7 @@ class ResultsMixin:
         if table_info:
             table_name = table_info.get("name") or table_name
 
-        query = "
-".join(
+        query = "\n".join(
             self._build_insert_statement(table_name, columns, tuple(row_values)) for row_values in source_rows
         )
 
