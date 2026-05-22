@@ -639,11 +639,16 @@ class ResultsMixin:
         if table:
             self._flash_table_yank(table, "all")
 
+    def _build_insert_values_clause(self: ResultsMixinHost, columns: list[str], row_values: tuple[Any, ...]) -> str:
+        insert_columns = list(columns[: len(row_values)])
+        value_list = ", ".join(self._format_sql_value(value) for value in row_values[: len(insert_columns)])
+        return f"({value_list})"
+
     def _build_insert_statement(self: ResultsMixinHost, table_name: str, columns: list[str], row_values: tuple[Any, ...]) -> str:
         insert_columns = list(columns[: len(row_values)])
         column_list = ", ".join(insert_columns)
-        value_list = ", ".join(self._format_sql_value(value) for value in row_values[: len(insert_columns)])
-        return f"INSERT INTO {table_name} ({column_list}) VALUES ({value_list});"
+        values_clause = self._build_insert_values_clause(columns, row_values)
+        return f"INSERT INTO {table_name} ({column_list}) VALUES {values_clause};"
 
     def action_ry_insert(self: ResultsMixinHost) -> None:
         """Copy an INSERT statement for the selected row (from yank menu)."""
@@ -698,9 +703,16 @@ class ResultsMixin:
         if table_info:
             table_name = table_info.get("name") or table_name
 
-        query = "\n".join(
-            self._build_insert_statement(table_name, columns, tuple(row_values)) for row_values in source_rows
-        )
+        if len(source_rows) == 1:
+            query = self._build_insert_statement(table_name, columns, tuple(source_rows[0]))
+        else:
+            first_row = tuple(source_rows[0])
+            insert_columns = list(columns[: len(first_row)])
+            column_list = ", ".join(insert_columns)
+            values_clauses = ",\n".join(
+                self._build_insert_values_clause(columns, tuple(row_values)) for row_values in source_rows
+            )
+            query = f"INSERT INTO {table_name} ({column_list}) VALUES\n{values_clauses};"
 
         self._copy_text(query)
         self._flash_table_yank(table, "all")

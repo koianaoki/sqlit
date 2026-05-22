@@ -175,14 +175,15 @@ def test_ry_leader_menu_resolves_shift_i_to_ry_insert_all() -> None:
     assert keymap.leader("insert_all", menu="ry") == "I"
 
 
-def test_action_ry_insert_all_copies_all_rows_as_insert_statements() -> None:
+def test_action_ry_insert_all_copies_all_rows_as_single_insert_statement() -> None:
     host = _Host(["id", "name"], [(1, "Alice"), (2, "Bob")])
 
     host.action_ry_insert_all()
 
     assert host.copied_text == (
-        "INSERT INTO users (id, name) VALUES (1, 'Alice');\n"
-        "INSERT INTO users (id, name) VALUES (2, 'Bob');"
+        "INSERT INTO users (id, name) VALUES\n"
+        "(1, 'Alice'),\n"
+        "(2, 'Bob');"
     )
     assert host.flashes == [(host.results_table, "all")]
 
