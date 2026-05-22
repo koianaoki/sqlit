@@ -64,8 +64,28 @@ class MockTree:
     def select_node(self, node: MockTreeNode) -> None:
         self.selected_node = node
 
+    def move_cursor(self, node: MockTreeNode) -> None:
+        self.selected_node = node
+
     def focus(self) -> None:
         self.has_focus = True
+
+    def is_node_in_tree(self, node: MockTreeNode | None) -> bool:
+        """Walk the tree to check if a node reference is still attached.
+
+        Mirrors Textual's actual behavior: a cursor reference pointing at a
+        node that was `child.remove()`d is stale — the widget no longer
+        renders that node.
+        """
+        if node is None:
+            return False
+        stack = [self.root]
+        while stack:
+            current = stack.pop()
+            if current is node:
+                return True
+            stack.extend(current.children)
+        return False
 
 
 class MockFilterInput:
@@ -383,4 +403,53 @@ class TestMultiDbFilterIssue141:
         assert "cs_session" in matched
         assert "cs_ticket" in matched, (
             f"Issue #141: filter must find lazy-loaded tables; got {matched}"
+        )
+
+
+class TestCursorPositionAfterFilterAccept:
+    """Pressing Enter on a filter match should leave the cursor on that
+    same match in the rebuilt tree — not on a stale node reference (the
+    pre-snapshot match object has been removed and replaced by a fresh
+    node when the tree was restored)."""
+
+    def _open_filter(self, host: _FilterHost) -> None:
+        TreeFilterMixin.action_tree_filter(host)  # type: ignore[arg-type]
+
+    def _type(self, host: _FilterHost, text: str) -> None:
+        for ch in text:
+            host._tree_filter_text += ch
+            TreeFilterMixin._update_tree_filter(host)  # type: ignore[arg-type]
+
+    def test_cursor_stays_on_matched_node_after_accept(self):
+        host = _FilterHost(["alpha", "test-server", "production"])
+
+        self._open_filter(host)
+        self._type(host, "test")
+
+        # We have exactly one match: 'test-server'
+        assert len(host._tree_filter_matches) == 1
+        matched_label = host._tree_filter_matches[0].data.get_label_text()
+        assert matched_label == "test-server"
+
+        # Accept (this closes the filter and restores the tree from snapshot)
+        TreeFilterMixin.action_tree_filter_accept(host)  # type: ignore[arg-type]
+
+        cursor = host.object_tree.selected_node
+
+        # 1. The cursor must point at a node that is still in the tree —
+        #    not at a removed/stale Python object from before the restore.
+        assert host.object_tree.is_node_in_tree(cursor), (
+            "After accept, cursor references a node that's no longer in "
+            "the tree (stale reference left over from the filter session). "
+            f"cursor: {cursor!r}"
+        )
+
+        # 2. That node should correspond to the match the user accepted.
+        assert cursor is not None
+        assert (
+            cursor.data is not None
+            and cursor.data.get_label_text() == "test-server"
+        ), (
+            "Cursor ended up on the wrong node after accept. "
+            f"Expected 'test-server', got: {cursor.data.get_label_text() if cursor.data else None}"
         )

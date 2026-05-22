@@ -109,17 +109,61 @@ class TreeFilterMixin:
 
     def action_tree_filter_accept(self: TreeFilterMixinHost) -> None:
         """Accept current filter selection, close filter, and activate the node."""
-        # Store current match before closing
-        current_node = None
-        if self._tree_filter_matches and self._tree_filter_match_index < len(self._tree_filter_matches):
+        # Remember the match's *data* (not the node reference) before closing.
+        # Closing the filter rebuilds the tree from the snapshot taken at
+        # filter-open time, which replaces every node object — so the
+        # reference we captured here would be stale after close. The data
+        # payload, however, is the same object on both old and new nodes
+        # (we pass it through unchanged in _restore_node_under), so we can
+        # re-locate the match by identity.
+        matched_data: Any = None
+        if (
+            self._tree_filter_matches
+            and self._tree_filter_match_index < len(self._tree_filter_matches)
+        ):
             current_node = self._tree_filter_matches[self._tree_filter_match_index]
+            if current_node and current_node.data:
+                matched_data = current_node.data
 
         # Close the filter
         self.action_tree_filter_close()
 
-        # Activate the selected node (connect to server, expand folder, etc.)
-        if current_node and current_node.data:
-            self._activate_tree_node(current_node)
+        if matched_data is None:
+            return
+
+        fresh_node = self._find_node_by_data(matched_data)
+        if fresh_node is None:
+            return
+
+        # Textual's Tree.move_cursor reads `node._line`, which is set during
+        # the next layout pass — not when the node is `add()`-ed. Since the
+        # snapshot restore that just ran in action_tree_filter_close added
+        # all fresh nodes synchronously, calling move_cursor right now sees
+        # stale `_line` values and parks the cursor on the wrong row.
+        # Defer the move (and the activation) until after the next refresh.
+        call_after = getattr(self, "call_after_refresh", None)
+        if callable(call_after):
+            call_after(lambda: self._select_and_activate_after_refresh(fresh_node))
+        else:
+            # Synchronous fallback (used in unit tests with a mock host).
+            self._select_and_activate_after_refresh(fresh_node)
+
+    def _select_and_activate_after_refresh(self: TreeFilterMixinHost, node: Any) -> None:
+        try:
+            self.object_tree.move_cursor(node)
+        except Exception:
+            pass
+        self._activate_tree_node(node)
+
+    def _find_node_by_data(self: TreeFilterMixinHost, data: Any) -> Any | None:
+        """Locate the node in the current tree whose `.data` is `data`."""
+        stack = [self.object_tree.root]
+        while stack:
+            node = stack.pop()
+            if node.data is data:
+                return node
+            stack.extend(node.children)
+        return None
 
     def action_tree_filter_next(self: TreeFilterMixinHost) -> None:
         """Move to next filter match."""
