@@ -174,10 +174,16 @@ def _warn_on_keymap_error(app: AppProtocol, is_headless: bool) -> None:
     if is_headless:
         print(f"[sqlit] {message}", file=sys.stderr)
         return
-    try:
-        app.notify(message, severity="error", timeout=15)
-    except Exception:
-        print(f"[sqlit] {message}", file=sys.stderr)
+    # Defer until the screen is composed — calling notify() during
+    # run_on_mount refreshes the notification rack, which touches widgets
+    # (`#results-area DataTable`) that aren't mounted yet.
+    def _show() -> None:
+        try:
+            app.notify(message, severity="error", timeout=15)
+        except Exception:
+            print(f"[sqlit] {message}", file=sys.stderr)
+
+    app.call_after_refresh(_show)
 
 
 def apply_mock_settings(app: AppProtocol, settings: dict) -> None:

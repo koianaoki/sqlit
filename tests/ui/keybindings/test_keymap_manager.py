@@ -262,6 +262,7 @@ class TestStartupNotification:
         assert manager.load_error is not None
 
         notifications: list[tuple[str, str]] = []
+        scheduled: list = []
 
         class FakeApp:
             _keymap_manager = manager
@@ -269,7 +270,14 @@ class TestStartupNotification:
             def notify(self, message: str, *, severity: str = "information", timeout: float = 5) -> None:
                 notifications.append((severity, message))
 
+            def call_after_refresh(self, callback, *args, **kwargs) -> None:
+                scheduled.append((callback, args, kwargs))
+
         _warn_on_keymap_error(FakeApp(), is_headless=False)  # type: ignore[arg-type]
+        # notify is deferred via call_after_refresh; run the scheduled callback.
+        assert len(scheduled) == 1
+        callback, args, kwargs = scheduled[0]
+        callback(*args, **kwargs)
         assert len(notifications) == 1
         severity, message = notifications[0]
         assert severity == "error"
@@ -283,6 +291,7 @@ class TestStartupNotification:
         manager.initialize()
         assert manager.load_error is None
 
+        scheduled: list = []
         notifications: list[tuple[str, str]] = []
 
         class FakeApp:
@@ -291,7 +300,12 @@ class TestStartupNotification:
             def notify(self, message: str, *, severity: str = "information", timeout: float = 5) -> None:
                 notifications.append((severity, message))
 
+            def call_after_refresh(self, callback, *args, **kwargs) -> None:
+                scheduled.append((callback, args, kwargs))
+
         _warn_on_keymap_error(FakeApp(), is_headless=False)  # type: ignore[arg-type]
+        # Nothing scheduled or notified when load_error is None.
+        assert scheduled == []
         assert notifications == []
 
 
