@@ -197,9 +197,9 @@ class DefaultKeymapProvider(KeymapProvider):
             LeaderCommandDef("z", "cancel_operation", "Cancel", "Actions", guard="query_executing"),
             LeaderCommandDef("t", "change_theme", "Change Theme", "Actions"),
             LeaderCommandDef(
-                "E",
+                "o",
                 "edit_query_in_editor",
-                "Edit in editor",
+                "Open in editor",
                 "Actions",
                 guard="query_focused",
             ),
