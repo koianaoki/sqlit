@@ -117,6 +117,22 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
         if node_path in loading_nodes:
             return
 
+        if self._get_node_kind(node) in ("table", "view"):
+            target_db = data.database
+
+            def _continue() -> None:
+                if node_path in loading_nodes:
+                    return
+                loading_nodes.add(node_path)
+                tree_loaders.add_loading_placeholder(self, node)
+                self._load_columns_async(node, data)
+
+            if target_db:
+                self._ensure_database_connection_async(target_db, _continue)
+            else:
+                _continue()
+            return
+
         if self._get_node_kind(node) == "folder":
             target_db = data.database
 

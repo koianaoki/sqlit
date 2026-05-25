@@ -331,7 +331,6 @@ class DefaultKeymapProvider(KeymapProvider):
             ActionKeyDef("k", "tree_cursor_up", "tree"),
             ActionKeyDef("up", "tree_cursor_up", "tree", primary=False),
             ActionKeyDef("slash", "tree_filter", "tree"),
-            ActionKeyDef("t", "table_filter", "tree"),
             ActionKeyDef("escape", "tree_filter_close", "tree_filter"),
             ActionKeyDef("enter", "tree_filter_accept", "tree_filter"),
             # Global

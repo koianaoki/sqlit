@@ -12,9 +12,7 @@ class TreeOnDatabaseState(State):
     help_category = "Explorer"
 
     def _setup_actions(self) -> None:
-        # Expanding a database still sets it as active automatically; table_filter
-        # is a database-level shortcut for narrowing Explorer to tables only.
-        self.allows("table_filter", label="Table Filter", help="Filter tables in this database")
+        pass  # Expanding a database now sets it as active automatically
 
     def get_display_bindings(self, app: InputContext) -> tuple[list[DisplayBinding], list[DisplayBinding]]:
         left: list[DisplayBinding] = []
@@ -22,14 +20,6 @@ class TreeOnDatabaseState(State):
 
         left.append(DisplayBinding(key="enter", label="Use database", action="toggle_node"))
         seen.add("toggle_node")
-        left.append(
-            DisplayBinding(
-                key=resolve_display_key("table_filter") or "t",
-                label="Table Filter",
-                action="table_filter",
-            )
-        )
-        seen.add("table_filter")
         left.append(
             DisplayBinding(
                 key=resolve_display_key("refresh_tree") or "f",
