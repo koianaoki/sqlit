@@ -543,9 +543,8 @@ class TreeFilterMixin:
             nonlocal count
             if node.data and self._get_node_label_text(node) and self._tree_filter_can_match_node(node):
                 count += 1
-            if self._tree_filter_should_descend_node(node):
-                for child in node.children:
-                    count_nodes(child)
+            for child in node.children:
+                count_nodes(child)
 
         start = root or self.object_tree.root
         if root is None:
