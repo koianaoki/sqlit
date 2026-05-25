@@ -5,6 +5,9 @@
 ## 1) 結果テーブル: `yi` で INSERT 文をコピー
 - 追加キー: `yi`（results コンテキスト）。
 - 目的: 選択中の結果行を、再投入可能な `INSERT INTO ... VALUES (...)` 形式の SQL としてクリップボードへコピーできるようにする。
+- 実装上の補足:
+  - コピー時はセル文字列に含まれる Textual / Rich の見た目用装飾（ANSI カラーコードやマークアップ）を除去し、**プレーンテキスト値**として SQL を組み立てる。
+  - その上で DB 方言に沿ったクォート/NULL 変換/エスケープを適用して INSERT 文を生成する。
 - 影響範囲:
   - `README.md` に操作説明を追加。
   - `sqlit/core/keymap.py` でキーバインド追加。
@@ -60,20 +63,33 @@
   - `c` = show_table_columns。
   - `i` = show_table_indexes。
   - 各 state（database/folder/table）で action 許可・表示を調整。
+- 実際に内部で発行される SQL（要点）:
+  - `show_table_columns`:
+    - 対象テーブルのカラムメタデータ取得クエリを provider 経由で実行。
+    - MySQL では `INFORMATION_SCHEMA.COLUMNS`（または同等のカラム情報取得 SQL）を対象 DB / schema / table 条件付きで参照する形。
+  - `show_table_indexes`:
+    - 対象テーブルのインデックス情報取得クエリを provider 経由で実行。
+    - MySQL では `INFORMATION_SCHEMA.STATISTICS`（または同等の index 情報取得 SQL）を対象 DB / table 条件付きで参照する形。
+  - いずれも「生 SQL ベタ書き」ではなく、Explorer の schema service / provider 層が DB 種別ごとに組み立てた SQL を使う。
 - 影響範囲:
   - `sqlit/domains/explorer/state/tree_on_database.py`。
   - `sqlit/domains/explorer/state/tree_on_folder.py`。
   - `sqlit/domains/explorer/state/tree_on_table.py`。
-  - テスト: `tests/ui/explorer/test_table_metadata_shortcuts.py`、`tests/ui/keybindings/test_keymap_provider.py`。
+  - `sqlit/domains/explorer/app/schema_service.py`。
+  - `sqlit/domains/connections/providers/mysql/base.py`。
+  - テスト: `tests/ui/explorer/test_table_metadata_shortcuts.py`、`tests/ui/keybindings/test_keymap_provider.py`、`tests/unit/test_explorer_schema_service.py`、`tests/unit/test_mysql_indexes.py`。
 
 ## 6) Explorer: マークアップエスケープ・表示安定化
 - 目的: ノードラベルの強調表示や特殊文字表示時の崩れ防止。
 - 主な追加/変更:
   - ハイライト時にマークアップを適切にエスケープ。
   - ラベル再構成処理の安定化。
+  - コピー系機能でも表示装飾（カラーコード等）が混ざらないよう、プレーン化して扱う方向に寄せる。
 - 影響範囲:
   - `sqlit/domains/explorer/ui/mixins/tree_filter.py`。
+  - `sqlit/domains/results/ui/mixins/results.py`。
   - `tests/ui/explorer/test_markup_escaping.py`。
+  - `tests/unit/test_results_yank_insert.py`。
 
 ## 7) Query Autocomplete: 補完位置/文脈判定の改善
 - 目的: SQL 入力中のカーソル位置に応じた補完精度の改善。
