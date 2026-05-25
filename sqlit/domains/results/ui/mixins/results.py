@@ -231,13 +231,28 @@ class ResultsMixin:
 
         flash_widget(table, css_class, on_complete=restore_cursor)
 
+    def _to_plain_text(self, value: object) -> str:
+        if value is None:
+            return "NULL"
+        plain = getattr(value, "plain", None)
+        if isinstance(plain, str):
+            return plain
+        return str(value)
+
+    def _to_sql_literal(self, value: object) -> str:
+        if value is None:
+            return "NULL"
+        if isinstance(value, bool):
+            return "TRUE" if value else "FALSE"
+        if isinstance(value, int | float):
+            return str(value)
+        return "'" + self._to_plain_text(value).replace("'", "''") + "'"
+
     def _format_tsv(self, columns: list[str], rows: list[tuple]) -> str:
         """Format columns and rows as TSV."""
 
         def fmt(value: object) -> str:
-            if value is None:
-                return "NULL"
-            return str(value).replace("\t", " ").replace("\r", "").replace("\n", "\\n")
+            return self._to_plain_text(value).replace("\t", " ").replace("\r", "").replace("\n", "\\n")
 
         lines: list[str] = []
         if columns:
@@ -294,7 +309,7 @@ class ResultsMixin:
         # Show inline value view
         try:
             value_view = self.query_one("#value-view", InlineValueView)
-            value_view.set_value(str(value) if value is not None else "NULL", column_name)
+            value_view.set_value(self._to_plain_text(value), column_name)
             value_view.show()
             if hasattr(self, "_value_view_active"):
                 self._value_view_active = True
@@ -432,7 +447,7 @@ class ResultsMixin:
             value = table.get_cell_at(table.cursor_coordinate)
         except Exception:
             return
-        self._copy_text(str(value) if value is not None else "NULL")
+        self._copy_text(self._to_plain_text(value))
         self._flash_table_yank(table, "cell")
 
     def _show_cell_tooltip(
@@ -446,7 +461,7 @@ class ResultsMixin:
             self._tooltip_timer.stop()
             self._tooltip_timer = None
 
-        tooltip_value = "NULL" if value is None else str(value)
+        tooltip_value = self._to_plain_text(value)
         if len(tooltip_value) > 2000:
             tooltip_value = f"{tooltip_value[:2000]}..."
 
@@ -549,7 +564,7 @@ class ResultsMixin:
             value = table.get_cell_at(table.cursor_coordinate)
         except Exception:
             return
-        self._copy_text(str(value) if value is not None else "NULL")
+        self._copy_text(self._to_plain_text(value))
         self._flash_table_yank(table, "cell")
 
     def action_ry_row(self: ResultsMixinHost) -> None:
@@ -793,17 +808,6 @@ class ResultsMixin:
         except Exception:
             return
 
-        # Format value for SQL
-        def sql_value(v: object) -> str:
-            if v is None:
-                return "NULL"
-            if isinstance(v, bool):
-                return "TRUE" if v else "FALSE"
-            if isinstance(v, int | float):
-                return str(v)
-            # String - escape single quotes
-            return "'" + str(v).replace("'", "''") + "'"
-
         # Get table name and primary key columns
         table_name = "<table>"
         pk_column_names: set[str] = set()
@@ -826,7 +830,7 @@ class ResultsMixin:
                 if val is None:
                     where_parts.append(f"{col} IS NULL")
                 else:
-                    where_parts.append(f"{col} = {sql_value(val)}")
+                    where_parts.append(f"{col} = {self._to_sql_literal(val)}")
 
         # If no where parts (no PKs matched result columns), fall back to all columns
         if not where_parts:
@@ -836,7 +840,7 @@ class ResultsMixin:
                     if val is None:
                         where_parts.append(f"{col} IS NULL")
                     else:
-                        where_parts.append(f"{col} = {sql_value(val)}")
+                        where_parts.append(f"{col} = {self._to_sql_literal(val)}")
 
         if not where_parts:
             self.notify("No row values", severity="warning")
@@ -888,17 +892,6 @@ class ResultsMixin:
                     self.notify("Cannot edit primary key column", severity="warning")
                     return
 
-        # Format value for SQL
-        def sql_value(v: object) -> str:
-            if v is None:
-                return "NULL"
-            if isinstance(v, bool):
-                return "TRUE" if v else "FALSE"
-            if isinstance(v, int | float):
-                return str(v)
-            # String - escape single quotes
-            return "'" + str(v).replace("'", "''") + "'"
-
         # Get table name and primary key columns
         table_name = "<table>"
         pk_column_names: set[str] = set()
@@ -920,7 +913,7 @@ class ResultsMixin:
                 if val is None:
                     where_parts.append(f"{col} IS NULL")
                 else:
-                    where_parts.append(f"{col} = {sql_value(val)}")
+                    where_parts.append(f"{col} = {self._to_sql_literal(val)}")
 
         # If no where parts (no PKs matched result columns), fall back to all columns
         if not where_parts:
@@ -930,7 +923,7 @@ class ResultsMixin:
                     if val is None:
                         where_parts.append(f"{col} IS NULL")
                     else:
-                        where_parts.append(f"{col} = {sql_value(val)}")
+                        where_parts.append(f"{col} = {self._to_sql_literal(val)}")
 
         where_clause = " AND ".join(where_parts)
 
