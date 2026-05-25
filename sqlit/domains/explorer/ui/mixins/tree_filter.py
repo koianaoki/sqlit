@@ -541,7 +541,7 @@ class TreeFilterMixin:
 
         def count_nodes(node: Any) -> None:
             nonlocal count
-            if node.data and self._get_node_label_text(node) and self._tree_filter_can_match_node(node):
+            if node.data and self._get_node_label_text(node):
                 count += 1
             for child in node.children:
                 count_nodes(child)
