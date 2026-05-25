@@ -51,11 +51,10 @@ def _restore_node_under(parent: Any, snap: _NodeSnapshot) -> None:
         child.allow_expand = snap.allow_expand
     except Exception:
         pass
-    if snap.is_expanded:
-        try:
-            child.expand()
-        except Exception:
-            pass
+    # NOTE: do not auto-expand while restoring snapshot during filter typing.
+    # Re-expanding every keystroke can repeatedly trigger lazy-loaders and cause
+    # continuous background updates. Keep nodes collapsed here and let explicit
+    # cursor-jump / user actions expand as needed.
     for grandchild in snap.children:
         _restore_node_under(child, grandchild)
 
