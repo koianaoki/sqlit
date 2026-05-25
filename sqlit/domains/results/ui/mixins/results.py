@@ -13,7 +13,7 @@ from sqlit.shared.ui.widgets import SqlitDataTable
 MIN_TIMER_DELAY_S = 0.001
 
 
-def _strip_table_markup(table: SqlitDataTable | None, value: Any) -> Any:
+def _strip_table_markup(table: Any, value: Any) -> Any:
     """Strip Rich markup from a cell value when the table renders markup.
 
     The results filter stores cells with Rich markup (e.g. `[bold #FFFF00]Ja[/]ne`)
