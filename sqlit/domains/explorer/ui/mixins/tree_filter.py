@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-<<<<<<< HEAD
 import re
-from typing import TYPE_CHECKING, Any, cast
-=======
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
->>>>>>> origin/main
+from typing import TYPE_CHECKING, Any, cast
 
 from rich.markup import escape as escape_markup
 
@@ -78,15 +74,12 @@ class TreeFilterMixin:
     _tree_filter_matches: list[Any] = []
     _tree_filter_match_index: int = 0
     _tree_original_labels: dict[int, str] = {}
-<<<<<<< HEAD
     _tree_filter_applied: bool = False
     _tree_filter_scope_path: str | None = None
     _tree_filter_scope_node: Any | None = None
 
     _TREE_FILTER_LOADABLE_FOLDERS = {"tables"}
-=======
     _tree_snapshot: list[_NodeSnapshot] | None = None
->>>>>>> origin/main
 
     def action_tree_filter(self: TreeFilterMixinHost) -> None:
         """Open the tree filter."""
@@ -136,19 +129,15 @@ class TreeFilterMixin:
         self._tree_filter_matches = []
         self._tree_filter_match_index = 0
         self._tree_original_labels = {}
-<<<<<<< HEAD
         self._tree_filter_applied = False
         self._tree_filter_scope_path = scope_path
         self._tree_filter_scope_node = scope_node
-=======
         # Freeze the currently loaded tree (incl. lazy-loaded children)
         # so we can restore it between keystrokes without calling
         # refresh_tree, which would lose async-loaded folder contents.
         self._tree_snapshot = [
             _snapshot_node(c) for c in self.object_tree.root.children
         ]
-
->>>>>>> origin/main
         self.tree_filter_input.show()
 
     def action_tree_filter_close(self: TreeFilterMixinHost) -> None:
@@ -169,22 +158,15 @@ class TreeFilterMixin:
         self._tree_filter_scope_node = None
         self.tree_filter_input.hide()
         self._restore_tree_labels()
-<<<<<<< HEAD
         if restore_tree:
             self._show_all_tree_nodes()
         self._tree_filter_applied = False
-=======
-        self._restore_tree_from_snapshot()
         self._tree_snapshot = None
->>>>>>> origin/main
         self._update_footer_bindings()
 
     def action_tree_filter_accept(self: TreeFilterMixinHost) -> None:
         """Accept current filter selection, close filter, and activate the node."""
-<<<<<<< HEAD
         current_node = None
-        if self._tree_filter_matches and self._tree_filter_match_index < len(self._tree_filter_matches):
-=======
         # Remember the match's *data* (not the node reference) before closing.
         # Closing the filter rebuilds the tree from the snapshot taken at
         # filter-open time, which replaces every node object — so the
@@ -197,7 +179,6 @@ class TreeFilterMixin:
             self._tree_filter_matches
             and self._tree_filter_match_index < len(self._tree_filter_matches)
         ):
->>>>>>> origin/main
             current_node = self._tree_filter_matches[self._tree_filter_match_index]
             if current_node and current_node.data:
                 matched_data = current_node.data
@@ -407,16 +388,8 @@ class TreeFilterMixin:
     def _update_tree_filter(self: TreeFilterMixinHost) -> None:
         """Update the tree based on current filter text."""
         self._restore_tree_labels()
-<<<<<<< HEAD
         search_root = self._get_tree_filter_search_root()
         is_scoped_filter = bool(getattr(self, "_tree_filter_scope_path", None))
-        total = (
-            self._count_all_nodes(search_root if is_scoped_filter else None)
-            if search_root is not None
-            else 0
-        )
-=======
->>>>>>> origin/main
         raw_text = self._tree_filter_text
         self._tree_filter_fuzzy = raw_text.startswith("~")
         self._tree_filter_regex_mode = False
@@ -449,11 +422,8 @@ class TreeFilterMixin:
         total = self._count_all_nodes()
 
         if not self._tree_filter_query:
-<<<<<<< HEAD
             if self._tree_filter_applied or self._tree_filter_matches or self._tree_original_labels:
                 self._show_all_tree_nodes()
-=======
->>>>>>> origin/main
             self._tree_filter_matches = []
             self._tree_filter_applied = False
             if is_scoped_filter:
