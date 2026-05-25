@@ -75,10 +75,6 @@ class TreeFilterMixin:
     _tree_filter_match_index: int = 0
     _tree_original_labels: dict[int, str] = {}
     _tree_filter_applied: bool = False
-    _tree_filter_scope_path: str | None = None
-    _tree_filter_scope_node: Any | None = None
-
-    _TREE_FILTER_LOADABLE_FOLDERS = {"tables"}
     _tree_snapshot: list[_NodeSnapshot] | None = None
 
     def action_tree_filter(self: TreeFilterMixinHost) -> None:
@@ -86,37 +82,11 @@ class TreeFilterMixin:
         if not self.object_tree.has_focus:
             self.object_tree.focus()
 
-        self._begin_tree_filter_session(scope_path=None)
+        self._begin_tree_filter_session()
         self._update_tree_filter()
         self._update_footer_bindings()
 
-    def action_table_filter(self: TreeFilterMixinHost) -> None:
-        """Open a table-only filter for the selected database node."""
-        if not self.object_tree.has_focus:
-            self.object_tree.focus()
-
-        tables_node = self._get_table_filter_tables_folder()
-        if tables_node is None:
-            notify = getattr(self, "notify", None)
-            if callable(notify):
-                notify("Tables folder is not available for this database", severity="warning")
-            return
-
-        try:
-            tables_node.expand()
-        except Exception:
-            pass
-
-        scope_path = expansion_state.get_node_path(cast(Any, self), tables_node) or None
-        self._begin_tree_filter_session(scope_path=scope_path, scope_node=tables_node)
-        self._remember_tree_filter_path(scope_path, include_self=True)
-        self._ensure_tree_filter_search_nodes_loaded()
-        self._update_tree_filter()
-        self._update_footer_bindings()
-
-    def _begin_tree_filter_session(
-        self: TreeFilterMixinHost, *, scope_path: str | None, scope_node: Any | None = None
-    ) -> None:
+    def _begin_tree_filter_session(self: TreeFilterMixinHost) -> None:
         """Reset transient filter state and show the filter input for a new session."""
         self._tree_filter_visible = True
         self._tree_filter_text = ""
@@ -129,9 +99,6 @@ class TreeFilterMixin:
         self._tree_filter_matches = []
         self._tree_filter_match_index = 0
         self._tree_original_labels = {}
-        self._tree_filter_applied = False
-        self._tree_filter_scope_path = scope_path
-        self._tree_filter_scope_node = scope_node
         # Freeze the currently loaded tree (incl. lazy-loaded children)
         # so we can restore it between keystrokes without calling
         # refresh_tree, which would lose async-loaded folder contents.
@@ -142,9 +109,9 @@ class TreeFilterMixin:
 
     def action_tree_filter_close(self: TreeFilterMixinHost) -> None:
         """Close the tree filter and restore tree."""
-        self._close_tree_filter_state(restore_tree=True)
+        self._close_tree_filter_state()
 
-    def _close_tree_filter_state(self: TreeFilterMixinHost, *, restore_tree: bool) -> None:
+    def _close_tree_filter_state(self: TreeFilterMixinHost) -> None:
         """Close filter UI, optionally rebuilding the tree to show all nodes."""
         self._tree_filter_visible = False
         self._tree_filter_text = ""
@@ -154,13 +121,9 @@ class TreeFilterMixin:
         self._tree_filter_regex = None
         self._tree_filter_regex_error = None
         self._tree_filter_typing = False
-        self._tree_filter_scope_path = None
-        self._tree_filter_scope_node = None
         self.tree_filter_input.hide()
         self._restore_tree_labels()
-        if restore_tree:
-            self._show_all_tree_nodes()
-        self._tree_filter_applied = False
+        self._restore_tree_from_snapshot()
         self._tree_snapshot = None
         self._update_footer_bindings()
 
@@ -182,19 +145,7 @@ class TreeFilterMixin:
             current_node = self._tree_filter_matches[self._tree_filter_match_index]
             if current_node and current_node.data:
                 matched_data = current_node.data
-
-        is_table_filter = bool(getattr(self, "_tree_filter_scope_path", None))
-        if is_table_filter and current_node is not None:
-            current_path = expansion_state.get_node_path(cast(Any, self), current_node)
-            self._remember_tree_filter_path(current_path)
-            self._move_tree_cursor_to_node(current_node)
-
-        if is_table_filter:
-            # Table Filter is an in-place narrowing action: keep the Tables subtree
-            # open/filtered and leave the cursor on the chosen table.
-            self._close_tree_filter_state(restore_tree=False)
-        else:
-            self.action_tree_filter_close()
+        self.action_tree_filter_close()
 
         if matched_data is None:
             return
@@ -231,49 +182,6 @@ class TreeFilterMixin:
             if node.data is data:
                 return node
             stack.extend(node.children)
-        return None
-
-    def _move_tree_cursor_to_node(self: TreeFilterMixinHost, node: Any) -> None:
-        """Move the Explorer cursor to a node, falling back for test doubles."""
-        self._expand_ancestors(node)
-        move_cursor = getattr(self.object_tree, "move_cursor", None)
-        if callable(move_cursor):
-            move_cursor(node)
-        else:
-            self.object_tree.select_node(node)
-        update_footer = getattr(self, "_update_footer_bindings", None)
-        if callable(update_footer):
-            update_footer()
-
-    def _restore_tree_filter_cursor_path(self: TreeFilterMixinHost, path: str, attempt: int = 0) -> Any | None:
-        """Restore cursor to a filtered match after the tree is rebuilt/reloaded."""
-        self._remember_tree_filter_path(path)
-        restored_node = expansion_state.find_node_by_path(cast(Any, self), self.object_tree.root, path)
-        if restored_node is not None:
-            self._move_tree_cursor_to_node(restored_node)
-            return restored_node
-
-        if attempt >= 8:
-            return None
-
-        def retry() -> None:
-            self._restore_tree_filter_cursor_path(path, attempt + 1)
-
-        call_after_refresh = getattr(self, "call_after_refresh", None)
-        if callable(call_after_refresh):
-            call_after_refresh(retry)
-            return None
-
-        set_timer = getattr(self, "set_timer", None)
-        if callable(set_timer):
-            set_timer(0.05, retry)
-            return None
-
-        call_later = getattr(self, "call_later", None)
-        if callable(call_later):
-            call_later(retry)
-            return None
-
         return None
 
     def action_tree_filter_next(self: TreeFilterMixinHost) -> None:
@@ -388,8 +296,7 @@ class TreeFilterMixin:
     def _update_tree_filter(self: TreeFilterMixinHost) -> None:
         """Update the tree based on current filter text."""
         self._restore_tree_labels()
-        search_root = self._get_tree_filter_search_root()
-        is_scoped_filter = bool(getattr(self, "_tree_filter_scope_path", None))
+        search_root = self.object_tree.root
         raw_text = self._tree_filter_text
         self._tree_filter_fuzzy = raw_text.startswith("~")
         self._tree_filter_regex_mode = False
@@ -426,13 +333,8 @@ class TreeFilterMixin:
                 self._show_all_tree_nodes()
             self._tree_filter_matches = []
             self._tree_filter_applied = False
-            if is_scoped_filter:
-                self._ensure_tree_filter_search_nodes_loaded()
             self.tree_filter_input.set_filter("", 0, total)
             return
-
-        if is_scoped_filter:
-            self._ensure_tree_filter_search_nodes_loaded()
 
         if search_root is None:
             self._tree_filter_matches = []
@@ -443,7 +345,7 @@ class TreeFilterMixin:
         # Find all matching nodes. The default Explorer filter keeps main's
         # connection/database-only behavior; Table Filter searches inside its scoped subtree.
         matches: list[Any] = []
-        self._find_matching_nodes(search_root, matches, include_self=not is_scoped_filter)
+        self._find_matching_nodes(search_root, matches)
 
         self._tree_filter_matches = matches
         self._tree_filter_match_index = 0
@@ -460,72 +362,6 @@ class TreeFilterMixin:
         # Jump to first match
         if matches:
             self._jump_to_current_match()
-
-    def _get_table_filter_tables_folder(self: TreeFilterMixinHost) -> Any | None:
-        """Return the Tables folder for the selected database, Tables folder, or table."""
-        node = getattr(self.object_tree, "cursor_node", None)
-        if node is None:
-            return None
-
-        if self._get_node_kind(node) == "database":
-            for child in getattr(node, "children", []):
-                data = getattr(child, "data", None)
-                if self._get_node_kind(child) == "folder" and getattr(data, "folder_type", "") == "tables":
-                    return child
-            return None
-
-        current = node
-        while current and current != self.object_tree.root:
-            data = getattr(current, "data", None)
-            if self._get_node_kind(current) == "folder" and getattr(data, "folder_type", "") == "tables":
-                return current
-            current = getattr(current, "parent", None)
-        return None
-
-    def _remember_tree_filter_path(self: TreeFilterMixinHost, path: str | None, *, include_self: bool = False) -> None:
-        """Keep ancestors expanded and cursor restoration pending across filter rebuilds."""
-        if not path:
-            return
-        parts = [part for part in path.split("/") if part]
-        end = len(parts) + 1 if include_self else len(parts)
-        expanded_paths: Any = getattr(self, "_expanded_paths", set())
-        if isinstance(expanded_paths, set):
-            for index in range(1, end):
-                expanded_paths.add("/".join(parts[:index]))
-            self._expanded_paths = expanded_paths
-        if not include_self:
-            cast(Any, self)._pending_tree_cursor_path = path
-            cast(Any, self)._pending_tree_cursor_connection = ""
-
-    def _get_tree_filter_search_root(self: TreeFilterMixinHost) -> Any | None:
-        """Return the subtree that should be searched by the active explorer filter."""
-        path = getattr(self, "_tree_filter_scope_path", None)
-        if not path:
-            return self.object_tree.root
-
-        scoped_node = getattr(self, "_tree_filter_scope_node", None)
-        if scoped_node is not None and self._node_is_attached_to_tree(scoped_node):
-            return scoped_node
-
-        scoped_node = expansion_state.find_node_by_path(cast(Any, self), self.object_tree.root, path)
-        if scoped_node is not None:
-            self._tree_filter_scope_node = scoped_node
-            return scoped_node
-
-        # A scoped Table Filter must never fall back to the whole tree. If the
-        # Tables folder is temporarily unavailable during async refresh/filter
-        # updates, searching from root can select similarly named system tables
-        # such as INFORMATION_SCHEMA.ROUTINES and make metadata shortcuts show
-        # columns like ROUTINE_NAME.
-        return None
-
-    def _node_is_attached_to_tree(self: TreeFilterMixinHost, node: Any) -> bool:
-        current = node
-        while current is not None:
-            if current is self.object_tree.root:
-                return True
-            current = getattr(current, "parent", None)
-        return False
 
     def _extract_tree_filter_regex_query(self: TreeFilterMixinHost, raw_text: str) -> str | None:
         """Return regex pattern when the filter text uses a regex prefix."""
@@ -553,27 +389,7 @@ class TreeFilterMixin:
             indices.update(range(start, end))
         return matched, sorted(indices)
 
-    def _tree_filter_can_match_node(self: TreeFilterMixinHost, node: Any) -> bool:
-        """Return whether a node should be a selectable filter result."""
-        if getattr(self, "_tree_filter_scope_path", None):
-            return self._get_node_kind(node) == "table"
-        return self._get_node_kind(node) in {"connection_folder", "connection", "database"}
-
-    def _tree_filter_should_descend_node(self: TreeFilterMixinHost, node: Any) -> bool:
-        """Return whether filtering should inspect a node's children."""
-        if getattr(self, "_tree_filter_scope_path", None):
-            return True
-        kind = self._get_node_kind(node)
-        if kind == "database":
-            return False
-        if kind in {"", "connection_folder", "connection"}:
-            return True
-        data = getattr(node, "data", None)
-        return kind == "folder" and getattr(data, "folder_type", "") == "databases"
-
-    def _find_matching_nodes(
-        self: TreeFilterMixinHost, node: Any, matches: list, include_self: bool = True
-    ) -> bool:
+    def _find_matching_nodes(self: TreeFilterMixinHost, node: Any, matches: list) -> bool:
         """Recursively find nodes matching the filter.
 
         Returns True if this node or any descendant matches.
@@ -584,14 +400,13 @@ class TreeFilterMixin:
         # Check children first. The default Explorer filter only searches the
         # connection/database hierarchy; scoped Table Filter descends into the
         # Tables subtree.
-        if self._tree_filter_should_descend_node(node):
-            for child in node.children:
-                if self._find_matching_nodes(child, matches):
-                    has_matching_child = True
+        for child in node.children:
+            if self._find_matching_nodes(child, matches):
+                has_matching_child = True
 
         # Get node label text for matching
         label_text = self._get_node_label_text(node)
-        if include_self and label_text and self._tree_filter_can_match_node(node):
+        if label_text and self._get_node_kind(node) in ["connection_folder", "connection", "database"]:
             if self._tree_filter_fuzzy:
                 matched, indices = fuzzy_match(self._tree_filter_query, label_text)
             elif self._tree_filter_regex_mode:
@@ -614,75 +429,7 @@ class TreeFilterMixin:
                 # Preserve any existing markup prefix (like icons, colors)
                 node.set_label(self._rebuild_label_with_highlight(node, highlighted))
 
-        return node_matches or has_matching_child or self._tree_filter_node_has_pending_load(node)
-
-    def _ensure_tree_filter_search_nodes_loaded(self: TreeFilterMixinHost) -> bool:
-        """Start loading unloaded explorer folders so filters can match their objects."""
-        if not getattr(self, "_tree_filter_scope_path", None):
-            return False
-        if getattr(self, "current_connection", None) is None or getattr(self, "current_provider", None) is None:
-            return False
-
-        started = False
-        search_root = self._get_tree_filter_search_root()
-        if search_root is None:
-            return False
-
-        stack = [search_root]
-        while stack:
-            node = stack.pop()
-            if self._tree_filter_should_load_node(node):
-                started = self._start_tree_filter_node_load(node) or started
-            stack.extend(reversed(getattr(node, "children", [])))
-        return started
-
-    def _tree_filter_should_load_node(self: TreeFilterMixinHost, node: Any) -> bool:
-        """Return True when a node may contain searchable children that are not loaded yet."""
-        data = getattr(node, "data", None)
-        if data is None:
-            return False
-        if self._get_node_kind(node) != "folder":
-            return False
-        folder_type = getattr(data, "folder_type", "")
-        if folder_type not in self._TREE_FILTER_LOADABLE_FOLDERS:
-            return False
-        children = list(getattr(node, "children", []))
-        return not children or (len(children) == 1 and self._get_node_kind(children[0]) == "loading")
-
-    def _start_tree_filter_node_load(self: TreeFilterMixinHost, node: Any) -> bool:
-        """Expand and load a folder node for explorer filtering."""
-        children = list(getattr(node, "children", []))
-        if children and not (len(children) == 1 and self._get_node_kind(children[0]) == "loading"):
-            return False
-
-        try:
-            node.expand()
-        except Exception:
-            pass
-
-        if children:
-            return False
-
-        node_path = expansion_state.get_node_path(cast(Any, self), node)
-        if not node_path:
-            return False
-        loading_nodes = tree_loaders.ensure_loading_nodes(cast(Any, self))
-        if node_path in loading_nodes:
-            return False
-
-        loading_nodes.add(node_path)
-        tree_loaders.add_loading_placeholder(cast(Any, self), node)
-        self._load_folder_async(node, node.data)
-        return True
-
-    def _tree_filter_node_has_pending_load(self: TreeFilterMixinHost, node: Any) -> bool:
-        """Keep loading folders visible until their children can be filtered."""
-        if not getattr(self, "_tree_filter_scope_path", None):
-            return False
-        if not self._tree_filter_query or self._get_node_kind(node) != "folder":
-            return False
-        children = list(getattr(node, "children", []))
-        return len(children) == 1 and self._get_node_kind(children[0]) == "loading"
+        return node_matches or has_matching_child
 
     def _get_node_label_text(self, node: Any) -> str:
         """Get the plain text label for a node."""
@@ -708,28 +455,7 @@ class TreeFilterMixin:
         """Hide nodes that don't match and aren't ancestors of matches."""
         match_ids = {id(n) for n in self._tree_filter_matches}
         ancestor_ids = set()
-        pending_ids = set()
-        scope_node = self._get_tree_filter_search_root()
-        if scope_node is None:
-            return
-
-        def collect_pending(node: Any) -> None:
-            if self._tree_filter_node_has_pending_load(node):
-                pending_ids.add(id(node))
-                for child in getattr(node, "children", []):
-                    pending_ids.add(id(child))
-            for child in getattr(node, "children", []):
-                collect_pending(child)
-
-        if getattr(self, "_tree_filter_scope_path", None):
-            collect_pending(scope_node)
-
-        # Keep the scoped subtree reachable from the root while filtering.
-        if getattr(self, "_tree_filter_scope_path", None):
-            current = scope_node
-            while current and current != self.object_tree.root:
-                ancestor_ids.add(id(current))
-                current = current.parent
+        pending_ids: set[int] = set()
 
         # Collect all ancestor IDs
         for node in self._tree_filter_matches:
