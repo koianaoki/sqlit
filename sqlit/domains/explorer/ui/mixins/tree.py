@@ -357,6 +357,61 @@ class TreeMixin(TreeSchemaMixin, TreeLabelMixin):
             tree_object_info.show_sequence_info(self, data)
             return
 
+
+    def _run_table_metadata_query(self: TreeMixinHost, *, mode: str) -> None:
+        if not self.current_provider or not self._session:
+            return
+
+        node = self.object_tree.cursor_node
+        if not node or not node.data or self._get_node_kind(node) not in ("table", "view"):
+            return
+
+        data = node.data
+        table_name = str(getattr(data, "name", "") or "").strip()
+        schema_name = getattr(data, "schema", None)
+        database_name = getattr(data, "database", None)
+        if not table_name:
+            return
+
+        db_type = str(getattr(getattr(self.current_provider, "metadata", None), "db_type", "")).lower()
+        if db_type in ("mysql", "mariadb"):
+            table_ref = table_name
+            if schema_name:
+                table_ref = f"{schema_name}.{table_name}"
+            if mode == "columns":
+                query = f"SHOW FULL COLUMNS FROM {table_ref}"
+            else:
+                query = f"SHOW INDEX FROM {table_ref}"
+        else:
+            if mode == "columns":
+                query = self.current_provider.dialect.build_select_query(
+                    table_name,
+                    0,
+                    database_name,
+                    schema_name,
+                )
+                query = f"/* table columns */\n{query}"
+            else:
+                query = self.current_provider.dialect.build_select_query(
+                    table_name,
+                    0,
+                    database_name,
+                    schema_name,
+                )
+                query = f"/* table indexes */\n{query}"
+
+        self.query_input.text = query
+        self._query_target_database = database_name
+        self.action_execute_query()
+
+    def action_show_table_columns(self: TreeMixinHost) -> None:
+        """Show columns for the selected table/view."""
+        self._run_table_metadata_query(mode="columns")
+
+    def action_show_table_indexes(self: TreeMixinHost) -> None:
+        """Show indexes for the selected table/view."""
+        self._run_table_metadata_query(mode="indexes")
+
     def action_use_database(self: TreeMixinHost) -> None:
         """Toggle the selected database as the default for the current connection."""
         node = self.object_tree.cursor_node
