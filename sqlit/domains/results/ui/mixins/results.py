@@ -30,6 +30,16 @@ def _strip_table_markup(table: Any, value: Any) -> Any:
         return value
 
 
+def _quote_identifier(identifier: str, db_type: str | None) -> str:
+    """Quote a SQL identifier using simple dialect defaults."""
+    if db_type in {"mssql", "sqlserver"}:
+        return f"[{identifier.replace(']', ']]')}]"
+    if db_type in {"mysql", "mariadb"}:
+        return f"`{identifier.replace('`', '``')}`"
+    escaped = identifier.replace('"', '""')
+    return f'"{escaped}"'
+
+
 class ResultsMixin:
     """Mixin providing results handling functionality."""
 
@@ -604,6 +614,16 @@ class ResultsMixin:
         if table:
             self._flash_table_yank(table, "all")
 
+    def action_ry_insert(self: ResultsMixinHost) -> None:
+        """Copy current row as INSERT INTO ... VALUES (...)."""
+        self._clear_leader_pending()
+        self._copy_insert_from_results(scope="row")
+
+    def action_ry_insert_all(self: ResultsMixinHost) -> None:
+        """Copy all rows as one INSERT INTO ... VALUES (...), (...)."""
+        self._clear_leader_pending()
+        self._copy_insert_from_results(scope="all")
+
     def action_ry_columns(self: ResultsMixinHost) -> None:
         """Pick a column subset, then copy all rows of those columns as TSV."""
         self._clear_leader_pending()
@@ -859,6 +879,59 @@ class ResultsMixin:
                 on_confirm(result)
 
         self.push_screen(ColumnPickerScreen(columns), handle)
+
+    def _copy_insert_from_results(self: ResultsMixinHost, scope: str) -> None:
+        table, columns, rows, stacked = self._get_active_results_context()
+        if not table or table.row_count <= 0:
+            self.notify("No results", severity="warning")
+            return
+        if not columns:
+            self.notify("No column info", severity="warning")
+            return
+
+        table_info = self._get_active_results_table_info(table, stacked)
+        table_name = (table_info or {}).get("name") or "<table>"
+        db_type = getattr(self, "_query_service_db_type", None)
+        quoted_table = _quote_identifier(str(table_name), db_type)
+        quoted_columns = ", ".join(_quote_identifier(str(c), db_type) for c in columns)
+
+        def sql_value(v: Any) -> str:
+            if v is None:
+                return "NULL"
+            if isinstance(v, bool):
+                return "TRUE" if v else "FALSE"
+            if isinstance(v, int | float):
+                return str(v)
+            return "'" + str(v).replace("'", "''") + "'"
+
+        plain_rows: list[tuple[Any, ...]] = []
+        if scope == "row":
+            try:
+                plain_rows = [tuple(_strip_table_markup(table, v) for v in table.get_row_at(table.cursor_row))]
+            except Exception:
+                return
+        else:
+            if rows:
+                for row in rows:
+                    plain_rows.append(tuple(_strip_table_markup(table, v) for v in row))
+            else:
+                for row_idx in range(table.row_count):
+                    try:
+                        raw_row = table.get_row_at(row_idx)
+                    except Exception:
+                        continue
+                    plain_rows.append(tuple(_strip_table_markup(table, v) for v in raw_row))
+
+        if not plain_rows:
+            self.notify("No results", severity="warning")
+            return
+
+        values_sql = ",\n".join(
+            f"({', '.join(sql_value(v) for v in row)})" for row in plain_rows
+        )
+        query = f"INSERT INTO {quoted_table} ({quoted_columns}) VALUES\n{values_sql};"
+        self._copy_text(query)
+        self._flash_table_yank(table, "all" if scope == "all" else "row")
 
     def _copy_column_values(self: ResultsMixinHost) -> None:
         """Copy every value in the focused column as a SQL-ready list."""
