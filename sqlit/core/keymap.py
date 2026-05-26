@@ -295,6 +295,8 @@ class DefaultKeymapProvider(KeymapProvider):
             LeaderCommandDef("c", "cell", "Copy cell", "Copy", menu="ry"),
             LeaderCommandDef("y", "row", "Copy row", "Copy", menu="ry"),
             LeaderCommandDef("a", "all", "Copy all", "Copy", menu="ry"),
+            LeaderCommandDef("i", "insert", "Copy row as INSERT", "Copy", menu="ry"),
+            LeaderCommandDef("I", "insert_all", "Copy all as INSERT", "Copy", menu="ry"),
             LeaderCommandDef("o", "columns", "Copy columns...", "Copy", menu="ry"),
             LeaderCommandDef("f", "format", "Copy as...", "Copy", menu="ry"),
             LeaderCommandDef("e", "export", "Export...", "Export", menu="ry"),

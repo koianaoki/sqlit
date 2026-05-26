@@ -129,3 +129,28 @@ def test_edit_cell_strips_filter_markup_before_generating_sql() -> None:
     app = _FakeEditApp([("[bold #FFFF00]Ja[/]ne",)], ["name"])
     app.action_edit_cell()
     assert "WHERE name = 'Jane';" in app.query_input.text
+
+
+def test_copy_insert_row_strips_markup_and_formats_sql() -> None:
+    app = _FakeEditApp([("[bold #FFFF00]Ja[/]ne", 42, None)], ["name", "age", "note"])
+    app.action_ry_insert()
+    assert (
+        app.clipboard_text
+        == 'INSERT INTO "users" ("name", "age", "note") VALUES\n(\'Jane\', 42, NULL);'
+    )
+
+
+def test_copy_insert_all_uses_single_statement_multi_values() -> None:
+    app = _FakeEditApp(
+        [
+            ("[bold #FFFF00]Ja[/]ne", 42),
+            ("Bob", 10),
+        ],
+        ["name", "age"],
+    )
+    app.action_ry_insert_all()
+    assert app.clipboard_text == (
+        'INSERT INTO "users" ("name", "age") VALUES\n'
+        "('Jane', 42),\n"
+        "('Bob', 10);"
+    )
