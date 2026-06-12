@@ -141,7 +141,7 @@ def test_copy_insert_row_strips_markup_and_formats_sql() -> None:
     app.action_ry_insert()
     assert (
         app.clipboard_text
-        == 'INSERT INTO "users" ("name", "age", "note") VALUES\n(\'Jane\', 42, NULL);'
+        == "INSERT INTO `users` (`name`, `age`, `note`) VALUES\n('Jane', 42, NULL);"
     )
 
 
@@ -155,7 +155,7 @@ def test_copy_insert_all_uses_single_statement_multi_values() -> None:
     )
     app.action_ry_insert_all()
     assert app.clipboard_text == (
-        'INSERT INTO "users" ("name", "age") VALUES\n'
+        "INSERT INTO `users` (`name`, `age`) VALUES\n"
         "('Jane', 42),\n"
         "('Bob', 10);"
     )
