@@ -34,10 +34,8 @@ def _quote_identifier(identifier: str, db_type: str | None) -> str:
     """Quote a SQL identifier using simple dialect defaults."""
     if db_type in {"mssql", "sqlserver"}:
         return f"[{identifier.replace(']', ']]')}]"
-    if db_type in {"mysql", "mariadb"}:
-        return f"`{identifier.replace('`', '``')}`"
-    escaped = identifier.replace('"', '""')
-    return f'"{escaped}"'
+    escaped = identifier.replace("`", "``")
+    return f"`{escaped}`"
 
 
 class ResultsMixin:
