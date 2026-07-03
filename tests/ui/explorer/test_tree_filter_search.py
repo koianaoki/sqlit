@@ -60,12 +60,15 @@ class MockTree:
         self.root = MockTreeNode("root")
         self.has_focus = True
         self.selected_node: MockTreeNode | None = None
+        self.cursor_node: MockTreeNode | None = None
 
     def select_node(self, node: MockTreeNode) -> None:
         self.selected_node = node
+        self.cursor_node = node
 
     def move_cursor(self, node: MockTreeNode) -> None:
         self.selected_node = node
+        self.cursor_node = node
 
     def focus(self) -> None:
         self.has_focus = True
@@ -298,6 +301,7 @@ class _MultiDbFilterHost(TreeFilterMixin):
         self._tables_by_db = tables_by_db
         self.object_tree = MockTree()
         self.tree_filter_input = MockFilterInput()
+        self.activated_node = None
         self._populate(include_lazy_children=True)
 
     def _populate(self, *, include_lazy_children: bool) -> None:
@@ -345,8 +349,8 @@ class _MultiDbFilterHost(TreeFilterMixin):
     def _update_footer_bindings(self) -> None:
         pass
 
-    def _activate_tree_node(self, _node) -> None:
-        pass
+    def _activate_tree_node(self, node) -> None:
+        self.activated_node = node
 
 
 class TestMultiDbFilterIssue141:
@@ -375,6 +379,32 @@ class TestMultiDbFilterIssue141:
             if data is not None and hasattr(data, "get_label_text"):
                 names.append(data.get_label_text())
         return sorted(names)
+
+    def test_accept_uses_cursor_match_instead_of_stale_match_index(self):
+        host = _MultiDbFilterHost(
+            connection_name="prod",
+            databases=["CS"],
+            tables_by_db={"CS": ["cs_user", "cs_session", "cs_ticket"]},
+        )
+
+        self._open_filter(host)
+        self._type(host, "cs_")
+
+        matched_names = [
+            node.data.get_label_text() for node in host._tree_filter_matches
+        ]
+        assert matched_names == ["cs_user", "cs_session", "cs_ticket"]
+
+        # Simulate normal tree cursor movement (e.g. arrow keys/tree actions)
+        # to a later match without invoking n/N/j/k, leaving the old index at 0.
+        target = host._tree_filter_matches[1]
+        host.object_tree.move_cursor(target)
+        assert host._tree_filter_match_index == 0
+
+        TreeFilterMixin.action_tree_filter_accept(host)  # type: ignore[arg-type]
+
+        assert host.activated_node is not None
+        assert host.activated_node.data.get_label_text() == "cs_session"
 
     def test_filter_finds_lazy_loaded_tables_in_multi_db_mode(self):
         host = _MultiDbFilterHost(

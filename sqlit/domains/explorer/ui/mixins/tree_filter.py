@@ -117,13 +117,11 @@ class TreeFilterMixin:
         # (we pass it through unchanged in _restore_node_under), so we can
         # re-locate the match by identity.
         matched_data: Any = None
-        if (
-            self._tree_filter_matches
-            and self._tree_filter_match_index < len(self._tree_filter_matches)
-        ):
-            current_node = self._tree_filter_matches[self._tree_filter_match_index]
-            if current_node and current_node.data:
-                matched_data = current_node.data
+        current_node = self._current_tree_filter_match_from_cursor()
+        if current_node is None:
+            current_node = self._current_tree_filter_match_from_index()
+        if current_node is not None and current_node.data is not None:
+            matched_data = current_node.data
 
         # Close the filter
         self.action_tree_filter_close()
@@ -154,6 +152,38 @@ class TreeFilterMixin:
         except Exception:
             pass
         self._activate_tree_node(node)
+
+    def _get_tree_cursor_node(self: TreeFilterMixinHost) -> Any | None:
+        """Return the object tree's current cursor/selection node, if any."""
+        for attr_name in ("cursor_node", "selected_node"):
+            node = getattr(self.object_tree, attr_name, None)
+            if node is not None:
+                return node
+        return None
+
+    def _current_tree_filter_match_from_index(self: TreeFilterMixinHost) -> Any | None:
+        """Return the indexed filter match if the index is currently valid."""
+        if not self._tree_filter_matches:
+            return None
+        if 0 <= self._tree_filter_match_index < len(self._tree_filter_matches):
+            return self._tree_filter_matches[self._tree_filter_match_index]
+        return None
+
+    def _current_tree_filter_match_from_cursor(self: TreeFilterMixinHost) -> Any | None:
+        """Prefer the visible tree cursor when it points at a filter match."""
+        cursor_node = self._get_tree_cursor_node()
+        if cursor_node is None:
+            return None
+        try:
+            match_index = self._tree_filter_matches.index(cursor_node)
+        except ValueError:
+            return None
+        self._tree_filter_match_index = match_index
+        return cursor_node
+
+    def _sync_tree_filter_match_index_to_cursor(self: TreeFilterMixinHost) -> None:
+        """Keep match index aligned with cursor movement inside filtered results."""
+        self._current_tree_filter_match_from_cursor()
 
     def _find_node_by_data(self: TreeFilterMixinHost, data: Any) -> Any | None:
         """Locate the node in the current tree whose `.data` is `data`."""
@@ -270,6 +300,7 @@ class TreeFilterMixin:
 
         # Pass unhandled keys to next mixin
         super().on_key(event)  # type: ignore[misc]
+        self._sync_tree_filter_match_index_to_cursor()
 
     def _update_tree_filter(self: TreeFilterMixinHost) -> None:
         """Update the tree based on current filter text."""
